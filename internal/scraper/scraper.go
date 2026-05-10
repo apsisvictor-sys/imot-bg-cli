@@ -3,6 +3,7 @@ package scraper
 import (
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,11 +16,12 @@ import (
 )
 
 const (
-	BaseURL      = "https://www.imot.bg/obiavi"
-	FormURL      = "https://www.imot.bg/pcgi/imot.cgi"
-	UserAgent    = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-	RequestDelay = 1500 * time.Millisecond
-	PerPage      = 40
+	BaseURL           = "https://www.imot.bg/obiavi"
+	FormURL           = "https://www.imot.bg/pcgi/imot.cgi"
+	UserAgent         = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	SearchPageDelay   = 3000 * time.Millisecond // 3s between search result pages
+	DetailPageDelay   = 8000 * time.Millisecond // 8s between detail page fetches
+	PerPage           = 40
 )
 
 // Client is the HTTP scraper for imot.bg
@@ -34,6 +36,12 @@ func NewClient() *Client {
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+// jitteredSleep sleeps for base +- 30% random jitter to mimic human browsing.
+func jitteredSleep(base time.Duration) {
+	jitter := time.Duration(float64(base) * (0.7 + 0.6*rand.Float64()))
+	time.Sleep(jitter)
 }
 
 // FetchPage fetches a page from imot.bg and returns UTF-8 decoded HTML
@@ -68,7 +76,10 @@ func (c *Client) FetchPage(pageURL string) (string, error) {
 }
 
 // FetchDetail fetches and parses a single listing's detail page.
+// Applies rate limiting before the request to mimic human browsing.
 func (c *Client) FetchDetail(listingURL string) (DetailListing, error) {
+	jitteredSleep(DetailPageDelay)
+
 	html, err := c.FetchPage(listingURL)
 	if err != nil {
 		return DetailListing{}, fmt.Errorf("fetching detail page: %w", err)
@@ -319,7 +330,7 @@ func (c *Client) Search(params SearchParams) ([]Listing, error) {
 
 	// Fetch remaining pages
 	for page := 2; page <= totalPages; page++ {
-		time.Sleep(RequestDelay)
+		jitteredSleep(SearchPageDelay)
 
 		pageURL := buildURLWithSlug(params, neighborhoodSlug, page)
 		pageHTML, err := c.FetchPage(pageURL)
