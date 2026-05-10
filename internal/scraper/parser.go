@@ -16,8 +16,10 @@ var (
 	rePriceEUR   = regexp.MustCompile(`([0-9 ]+) €`)
 	rePriceBGN   = regexp.MustCompile(`([0-9 ]+\.[0-9]+) лв`)
 	reSqM        = regexp.MustCompile(`^(\d+)\s*кв\.м`)
-	reFloor      = regexp.MustCompile(`^(\d+)-[тм]и ет\.\s*от\s*(\d+)`)
-	reFloorShort = regexp.MustCompile(`^(\d+)-[тм]и ет\.`)
+	reFloor      = regexp.MustCompile(`^(\d+)-(?:ви|ри|ти|ми) ет\.\s*от\s*(\d+)`)
+	reFloorShort = regexp.MustCompile(`^(\d+)-(?:ви|ри|ти|ми) ет\.`)
+	reParter     = regexp.MustCompile(`^Партер\s+от\s*(\d+)`)
+	reLevel      = regexp.MustCompile(`^ниво (-?\d+)\s*от\s*(\d+)`)
 	reYearExact  = regexp.MustCompile(`Въведен в експлоатация\s*(\d{4})\s*г\.`)
 	reYearRange  = regexp.MustCompile(`Въведен в експлоатация\s*(\d{4})\s*-\s*(\d{4})\s*г\.`)
 	reYearNot    = regexp.MustCompile(`Не е въведен в експлоатация`)
@@ -34,6 +36,7 @@ var (
 	reDetailPhone     = regexp.MustCompile(`(?s)class="phone[^>]*"[^>]*>(.*?)</div>`)
 	reDetailAgencyURL = regexp.MustCompile(`(?s)class="url"[^>]*>(.*?)</div>`)
 	reDetailOGURL     = regexp.MustCompile(`property="og:url" content="([^"]+)"`)
+	reParterDetail   = regexp.MustCompile(`(?i)партер`)
 )
 
 // ParseListings extracts listings from HTML
@@ -233,6 +236,14 @@ func parseInfo(info string, l *Listing) {
 				l.Floor = m[1]
 				floorFound = true
 				continue
+			} else if m := reParter.FindStringSubmatch(part); len(m) > 1 {
+				l.Floor = fmt.Sprintf("0 от %s", m[1])
+				floorFound = true
+				continue
+			} else if m := reLevel.FindStringSubmatch(part); len(m) > 2 {
+				l.Floor = fmt.Sprintf("%s от %s", m[1], m[2])
+				floorFound = true
+				continue
 			}
 		}
 
@@ -248,6 +259,14 @@ func parseInfo(info string, l *Listing) {
 				continue
 			} else if reYearNot.MatchString(part) {
 				l.YearBuilt = "under construction"
+				yearFound = true
+				continue
+			} else if strings.Contains(part, "Ще бъде въведен") {
+				if m := reYearExact.FindStringSubmatch(part); len(m) > 1 {
+					l.YearBuilt = "under construction - " + m[1]
+				} else {
+					l.YearBuilt = "under construction"
+				}
 				yearFound = true
 				continue
 			}
@@ -268,6 +287,19 @@ func parseInfo(info string, l *Listing) {
 			desc = desc[:497] + "..."
 		}
 		l.Description = desc
+	}
+
+	// Fallback: extract floor from description if still empty
+	if l.Floor == "" && l.Description != "" {
+		if m := reFloor.FindStringSubmatch(l.Description); len(m) > 2 {
+			l.Floor = fmt.Sprintf("%s от %s", m[1], m[2])
+		} else if m := reFloorShort.FindStringSubmatch(l.Description); len(m) > 1 {
+			l.Floor = m[1]
+		} else if m := reParter.FindStringSubmatch(l.Description); len(m) > 1 {
+			l.Floor = fmt.Sprintf("0 от %s", m[1])
+		} else if m := reLevel.FindStringSubmatch(l.Description); len(m) > 2 {
+			l.Floor = fmt.Sprintf("%s от %s", m[1], m[2])
+		}
 	}
 }
 
@@ -374,7 +406,12 @@ func ParseDetail(html string) DetailListing {
 			}
 			// Floor
 			if strings.HasPrefix(p, "Етаж:") {
-				d.Floor = strings.TrimSpace(strings.TrimPrefix(p, "Етаж:"))
+				floorVal := strings.TrimSpace(strings.TrimPrefix(p, "Етаж:"))
+				// Normalize Партер → 0
+				if reParterDetail.MatchString(floorVal) {
+					floorVal = reParterDetail.ReplaceAllString(floorVal, "0")
+				}
+				d.Floor = floorVal
 				continue
 			}
 			// Gas
@@ -404,7 +441,12 @@ func ParseDetail(html string) DetailListing {
 				} else if m2 := reYearExact.FindStringSubmatch(p); len(m2) > 1 {
 					d.YearBuilt = m2[1]
 				} else if strings.Contains(p, "Ще бъде въведен") {
-					d.YearBuilt = "under construction"
+					// Extract expected year: "Ще бъде въведен в експлоатация 2026 г."
+					if m2 := reYearExact.FindStringSubmatch(p); len(m2) > 1 {
+						d.YearBuilt = "under construction - " + m2[1]
+					} else {
+						d.YearBuilt = "under construction"
+					}
 				} else if strings.HasSuffix(p, "Въведен в експлоатация") || strings.HasSuffix(p, "Въведен в експлоатация ,") {
 					d.YearBuilt = ""
 				}
