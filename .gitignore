@@ -1,0 +1,5 @@
+imot
+imot.db
+*.db
+view.py
+/tmp/
