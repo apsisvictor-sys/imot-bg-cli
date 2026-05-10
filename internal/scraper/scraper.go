@@ -67,6 +67,20 @@ func (c *Client) FetchPage(pageURL string) (string, error) {
 	return string(body), nil
 }
 
+// FetchDetail fetches and parses a single listing's detail page.
+func (c *Client) FetchDetail(listingURL string) (DetailListing, error) {
+	html, err := c.FetchPage(listingURL)
+	if err != nil {
+		return DetailListing{}, fmt.Errorf("fetching detail page: %w", err)
+	}
+
+	detail := ParseDetail(html)
+	if detail.URL == "" {
+		detail.URL = listingURL
+	}
+	return detail, nil
+}
+
 // resolveNeighborhoodSlug converts a Bulgarian neighborhood name to a URL slug.
 // First tries transliteration. If the transliterated URL returns 404, falls back
 // to POST form resolution via f40 parameter.

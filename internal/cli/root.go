@@ -64,6 +64,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newSQLCmd())
 	rootCmd.AddCommand(newWatchCmd())
 	rootCmd.AddCommand(newCitiesCmd())
+	rootCmd.AddCommand(newDetailCmd())
 
 	return rootCmd
 }
@@ -143,6 +144,36 @@ func newCitiesCmd() *cobra.Command {
 		RunE:  runCities,
 	}
 	return cmd
+}
+
+func newDetailCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "detail <url>",
+		Short: "Fetch full details for a single listing",
+		Long:  "Fetches a listing's detail page from imot.bg and extracts enriched data: full description, floor, year, heating, construction type, all phones, agency URL.",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runDetail,
+	}
+	cmd.Flags().BoolVar(&flagJSON, "json", true, "JSON output (default true)")
+	return cmd
+}
+
+func runDetail(cmd *cobra.Command, args []string) error {
+	url := args[0]
+	if !strings.HasPrefix(url, "https://www.imot.bg/obiava-") {
+		return fmt.Errorf("URL must be an imot.bg listing URL (e.g. https://www.imot.bg/obiava-...)" )
+	}
+
+	client := scraper.NewClient()
+	detail, err := client.FetchDetail(url)
+	if err != nil {
+		return fmt.Errorf("fetching detail: %w", err)
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	return enc.Encode(detail)
 }
 
 func resolveCity(city string) string {

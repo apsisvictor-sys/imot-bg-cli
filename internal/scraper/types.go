@@ -2,6 +2,22 @@ package scraper
 
 import "time"
 
+// DetailListing holds the enriched data extracted from a listing's detail page.
+// Search-page fields (ID, Type, City, Neighborhood, PriceEUR, PriceBGN, SizeSqM)
+// are NOT duplicated here — they come from the search card.
+type DetailListing struct {
+	URL              string `json:"url"`
+	FullDescription  string `json:"full_description"`
+	Floor            string `json:"floor"`              // e.g. "4-ти от 4", "Партер от 5"
+	YearBuilt        string `json:"year_built"`         // e.g. "2007", "1960-1969"
+	ConstructionType string `json:"construction_type"`  // e.g. "Тухла", "Панел", "ЕПК"
+	HeatingTEC       string `json:"heating_tec"`        // "ДА" or "НЕ"
+	HeatingGas       string `json:"heating_gas"`        // "ДА" or "НЕ"
+	SellerType       string `json:"seller_type"`        // "Агенция" or "Частно лице"
+	Phones           string `json:"phones"`             // semicolon-separated, most complete from detail page
+	AgencyURL        string `json:"agency_url"`         // e.g. "mchome.imot.bg"
+}
+
 // Listing represents a single real estate listing from imot.bg
 type Listing struct {
 	ID           string `json:"id"`

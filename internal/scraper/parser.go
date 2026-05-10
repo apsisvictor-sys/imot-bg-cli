@@ -27,6 +27,13 @@ var (
 	reTitle      = regexp.MustCompile(`<a[^>]*class="title[^"]*"[^>]*>(.*?)</a>`)
 	reURL        = regexp.MustCompile(`href="(//www\.imot\.bg/obiava-[^"]*)"`)
 	reAgency     = regexp.MustCompile(`class="name">\s*<a[^>]*>(.*?)</a>`)
+
+	// Detail page patterns
+	reDetailText      = regexp.MustCompile(`(?s)class="text"[^>]*>(.*?)</div>`)
+	reDetailParams    = regexp.MustCompile(`class="params"[^>]*>(.*?)</div>`)
+	reDetailPhone     = regexp.MustCompile(`(?s)class="phone[^>]*"[^>]*>(.*?)</div>`)
+	reDetailAgencyURL = regexp.MustCompile(`(?s)class="url"[^>]*>(.*?)</div>`)
+	reDetailOGURL     = regexp.MustCompile(`property="og:url" content="([^"]+)"`)
 )
 
 // ParseListings extracts listings from HTML
@@ -315,4 +322,143 @@ func ParseTotalCount(html string) int {
 		}
 	}
 	return 0
+}
+
+// ParseDetail extracts enriched data from a listing's detail page HTML.
+// Returns a DetailListing with fields only available on the detail page.
+func ParseDetail(html string) DetailListing {
+	d := DetailListing{}
+
+	// 1. Full description from class="text" div (first match is the listing text,
+	// second is usually "В imot.bg от YYYY г. agency.imot.bg")
+	textMatches := reDetailText.FindAllStringSubmatch(html, 2)
+	for _, m := range textMatches {
+		clean := stripTags(m[1])
+		clean = strings.TrimSpace(clean)
+		clean = strings.ReplaceAll(clean, "&#39;", "'")
+		clean = strings.ReplaceAll(clean, "&amp;", "&")
+		clean = strings.ReplaceAll(clean, "&quot;", "\"")
+		clean = strings.ReplaceAll(clean, "&#128204;", "")
+		clean = strings.ReplaceAll(clean, "&#10071;", "")
+		clean = strings.ReplaceAll(clean, "&#128311;", "")
+		clean = strings.ReplaceAll(clean, "&#10024;", "")
+		clean = strings.ReplaceAll(clean, "&#128205;", "")
+		clean = strings.ReplaceAll(clean, "&#128188;", "")
+		clean = strings.ReplaceAll(clean, "&#9889;", "")
+		clean = strings.ReplaceAll(clean, "&#128222;", "")
+		clean = strings.ReplaceAll(clean, "\u00a0", " ")
+		// Skip the "В imot.bg от" line
+		if strings.HasPrefix(clean, "В imot.bg от") {
+			continue
+		}
+		if len(clean) > 20 {
+			d.FullDescription = clean
+			break
+		}
+	}
+
+	// 2. Structured params line: class="params"
+	// e.g. "Площ: 24 кв.м, Агенция, Етаж: 4-ти от 4, Газ: НЕ, ТEЦ: ДА, Тухла, Въведен в експлоатация 1930 - 1939 г.,"
+	if m := reDetailParams.FindStringSubmatch(html); len(m) > 1 {
+		params := stripTags(m[1])
+		paramsParts := strings.Split(params, ",")
+		for _, p := range paramsParts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			// Seller type
+			if p == "Агенция" || p == "Частно лицо" {
+				d.SellerType = p
+				continue
+			}
+			// Floor
+			if strings.HasPrefix(p, "Етаж:") {
+				d.Floor = strings.TrimSpace(strings.TrimPrefix(p, "Етаж:"))
+				continue
+			}
+			// Gas
+			if strings.HasPrefix(p, "Газ:") {
+				d.HeatingGas = strings.TrimSpace(strings.TrimPrefix(p, "Газ:"))
+				continue
+			}
+			// TEC (imot.bg uses mixed Cyrillic/Latin: ТEЦ where E can be either)
+			if strings.HasPrefix(p, "ТEЦ:") || strings.HasPrefix(p, "ТЕЦ:") {
+				val := p
+				val = strings.TrimPrefix(val, "ТEЦ:")
+				val = strings.TrimPrefix(val, "ТЕЦ:")
+				d.HeatingTEC = strings.TrimSpace(val)
+				continue
+			}
+			// Construction type (Тухла, Панел, ЕПК, etc.)
+			if p == "Тухла" || p == "Панел" || p == "ЕПК" || p == "Гредоред" || p == "Метална конструкция" {
+				d.ConstructionType = p
+				continue
+			}
+			// Year
+			if strings.HasPrefix(p, "Въведен в експлоатация") {
+				p = strings.TrimSuffix(p, ",")
+				p = strings.TrimSpace(p)
+				if m2 := reYearRange.FindStringSubmatch(p); len(m2) > 2 {
+					d.YearBuilt = m2[1] + "-" + m2[2]
+				} else if m2 := reYearExact.FindStringSubmatch(p); len(m2) > 1 {
+					d.YearBuilt = m2[1]
+				} else if strings.Contains(p, "Ще бъде въведен") {
+					d.YearBuilt = "under construction"
+				} else if strings.HasSuffix(p, "Въведен в експлоатация") || strings.HasSuffix(p, "Въведен в експлоатация ,") {
+					d.YearBuilt = ""
+				}
+				continue
+			}
+		}
+	}
+
+	// 3. Phones from detail page - collect all unique phone numbers
+	var phoneList []string
+	seen := make(map[string]bool)
+	phoneBlocks := reDetailPhone.FindAllStringSubmatch(html, -1)
+	// Regex to match Bulgarian phone-like sequences
+	rePhoneDigits := regexp.MustCompile(`(?:\+359|0)\d[\d/\-]*\d`)
+	for _, m := range phoneBlocks {
+		// Strip all HTML tags first
+		ph := stripTags(m[1])
+		// Split on double-space or semicolon (common separators between two phones)
+		for _, segment := range strings.Split(ph, "  ") {
+			segment = strings.TrimSpace(segment)
+			if segment == "" {
+				continue
+			}
+			for _, part := range strings.Split(segment, ";") {
+				part = strings.TrimSpace(part)
+				for _, match := range rePhoneDigits.FindAllString(part, -1) {
+					p := strings.ReplaceAll(match, " ", "")
+					p = strings.ReplaceAll(p, "/", "")
+					p = strings.ReplaceAll(p, "-", "")
+					if len(p) < 5 {
+						continue
+					}
+					if !seen[p] {
+						seen[p] = true
+						phoneList = append(phoneList, p)
+					}
+				}
+			}
+		}
+	}
+	if len(phoneList) > 0 {
+		d.Phones = strings.Join(phoneList, ";")
+	}
+
+	// 4. Agency URL from class="url" div
+	if m := reDetailAgencyURL.FindStringSubmatch(html); len(m) > 1 {
+		d.AgencyURL = stripTags(m[1])
+	}
+
+	// 5. URL from the page itself (canonical)
+	// Extract from og:url or canonical link if available
+	if m := reDetailOGURL.FindStringSubmatch(html); len(m) > 1 {
+		d.URL = m[1]
+	}
+
+	return d
 }
