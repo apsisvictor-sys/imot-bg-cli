@@ -3,6 +3,7 @@ package scraper
 import (
 	"crypto/sha256"
 	"fmt"
+	stdhtml "html"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,8 +12,11 @@ import (
 )
 
 var (
-	reTotalCount     = regexp.MustCompile(`от общо\s+(\d+)\+?\s+обяви`)
-	reMaxPages       = 50 // safety cap when total count is unknown
+	reTotalCount = regexp.MustCompile(`от общо\s+([0-9 ]+)\+?\s+обяви`)
+	// reNoResults is imot.bg's explicit zero-match marker, verified live on a
+	// genuinely empty search: <div class="SearchInfoLine"> Няма намерени обяви - Продава</div>.
+	reNoResults  = regexp.MustCompile(`Няма намерени обяви`)
+	reMaxPages   = 50 // safety cap when total count is unknown
 	rePriceEUR   = regexp.MustCompile(`([0-9 ]+) €`)
 	rePriceBGN   = regexp.MustCompile(`([0-9 ]+\.[0-9]+) лв`)
 	reSqM        = regexp.MustCompile(`^(\d+)\s*кв\.м`)
@@ -31,12 +35,23 @@ var (
 	reAgency     = regexp.MustCompile(`class="name">\s*<a[^>]*>(.*?)</a>`)
 
 	// Detail page patterns
-	reDetailText      = regexp.MustCompile(`(?s)class="text"[^>]*>(.*?)</div>`)
-	reDetailParams    = regexp.MustCompile(`class="params"[^>]*>(.*?)</div>`)
-	reDetailPhone     = regexp.MustCompile(`(?s)class="phone[^>]*"[^>]*>(.*?)</div>`)
-	reDetailAgencyURL = regexp.MustCompile(`(?s)class="url"[^>]*>(.*?)</div>`)
-	reDetailOGURL     = regexp.MustCompile(`property="og:url" content="([^"]+)"`)
-	reParterDetail   = regexp.MustCompile(`(?i)партер`)
+	reDetailText        = regexp.MustCompile(`(?s)class="text"[^>]*>(.*?)</div>`)
+	reDetailParams      = regexp.MustCompile(`class="params"[^>]*>(.*?)</div>`)
+	reDetailPhone       = regexp.MustCompile(`(?s)class="phone[^>]*"[^>]*>(.*?)</div>`)
+	reDetailAgencyURL   = regexp.MustCompile(`(?s)class="url"[^>]*>(.*?)</div>`)
+	reDetailOGURL       = regexp.MustCompile(`property="og:url" content="([^"]+)"`)
+	reDetailPhoto       = regexp.MustCompile(`property="og:image"\s+content="([^"]+)"`)
+	reDetailViewCount   = regexp.MustCompile(`Обявата е посетена\s*<span>\s*([0-9 ]+)\s*</span>\s*пъти`)
+	reDetailCorrectedAt = regexp.MustCompile(`Коригирана в\s*([0-9]{1,2}):([0-9]{2})\s*на\s*([0-9]{1,2})\s+([^,]+),\s*([0-9]{4})\s*год\.`)
+	reDetailPublishedAt = regexp.MustCompile(`Публикувана в\s*([0-9]{1,2}):([0-9]{2})\s*на\s*([0-9]{1,2})\s+([^,<]+),\s*([0-9]{4})\s*год`)
+	reFeaturesBlock     = regexp.MustCompile(`(?s)Особености</span>.*?<div class="items">(.*?</div>)\s*</div>`)
+	reFeatureItem       = regexp.MustCompile(`<div>\s*([^<]+?)\s*</div>`)
+	reBrokerName        = regexp.MustCompile(`Брокер:</div>\s*<div class="name">\s*([^<]+?)\s*</div>`)
+	reBrokerPhone       = regexp.MustCompile(`(?s)Брокер:</div>.*?<div class="phone">\s*(?:<small>)?\s*([^<\s][^<]*?)\s*(?:</small>)?\s*</div>`)
+	reAgencyOffice      = regexp.MustCompile(`Офис:\s*([^<\n]+?)\s*(?:</div>|\n)`)
+	reVatNote           = regexp.MustCompile(`Не се начислява ДДС`)
+	reImotPhotoURL      = regexp.MustCompile(`(?i)(?:(?:https?:)?//)?[^"'\s<>]*focus\.bg/imot/photosimotbg/[^"'\s<>]+\.jpg`)
+	reParterDetail      = regexp.MustCompile(`(?i)партер`)
 )
 
 // ParseListings extracts listings from HTML
@@ -53,6 +68,13 @@ func ParseListings(html string) []Listing {
 
 		listing := parseListingBlock(block)
 		if listing.Type != "" && (listing.PriceEUR > 0 || listing.SizeSqM > 0) {
+			// Extract photo URL from full HTML using listing ID
+			if listing.ID != "" {
+				photoPat := regexp.MustCompile(`src="(//[^"]*focus\.bg/imot/photosimotbg/[^"]*?/` + regexp.QuoteMeta(listing.ID) + `_[^"]+\.jpg)"`)
+				if m := photoPat.FindStringSubmatch(html); len(m) > 1 {
+					listing.PhotoURL = "https:" + m[1]
+				}
+			}
 			listings = append(listings, listing)
 		}
 	}
@@ -113,11 +135,9 @@ func parseListingBlock(block string) Listing {
 
 	// Extract agency
 	if m := reAgency.FindStringSubmatch(block); len(m) > 1 {
-		l.Agency = strings.TrimSpace(m[1])
-		// Unescape HTML entities
-		l.Agency = strings.ReplaceAll(l.Agency, "&#39;", "'")
-		l.Agency = strings.ReplaceAll(l.Agency, "&amp;", "&")
-		l.Agency = strings.ReplaceAll(l.Agency, "&quot;", "\"")
+		// UnescapeString covers the full entity set (&#39;, &amp;, &quot;,
+		// &nbsp;, &bdquo;, &rsquo;, ...), not just the three handled before.
+		l.Agency = strings.TrimSpace(stdhtml.UnescapeString(m[1]))
 	}
 
 	// Generate hash for dedup
@@ -129,9 +149,11 @@ func parseListingBlock(block string) Listing {
 }
 
 func extractType(title string) string {
-	// Title looks like "Продава 1-СТАЕН" or "Продава КЪЩА"
+	// Title looks like "Продава 1-СТАЕН", "Продава КЪЩА" or "Дава под Наем 2-СТАЕН"
 	title = strings.TrimPrefix(title, "Продава ")
 	title = strings.TrimPrefix(title, "Се отдава ")
+	title = strings.TrimPrefix(title, "Дава под Наем ")
+	title = strings.TrimPrefix(title, "Дава под наем ")
 	title = strings.TrimSpace(title)
 
 	// Title may have location glued without space: "МНОГОСТАЕНград София, Лозенец"
@@ -145,7 +167,9 @@ func extractType(title string) string {
 	}
 	typePart := strings.TrimSpace(title[:cutIdx])
 
-	// Check for known types
+	// Property-type keywords. Overlapping keys are common ("БАНКОВ ОФИС"
+	// contains "ОФИС", "ЕТАЖ ОТ КЪЩА" contains both "ЕТАЖ" and "КЪЩА"), so the
+	// ranking below decides the answer instead of the order of this list.
 	types := []string{
 		"1-СТАЕН", "2-СТАЕН", "3-СТАЕН", "4-СТАЕН",
 		"МНОГОСТАЕН", "МЕЗОНЕТ", "КЪЩА", "ВИЛА",
@@ -163,11 +187,36 @@ func extractType(title string) string {
 		"ДОМ ЗА ВЪЗРАСТНИ ХОРА", "САМОСТОЯТЕЛНА СГРАДА",
 		"ХЛАДИЛЕН СКЛАД",
 	}
+	// 1. An exact match wins outright.
 	for _, t := range types {
-		if strings.Contains(typePart, t) {
+		if strings.EqualFold(typePart, t) {
 			return t
 		}
 	}
+
+	// 2. Otherwise the longest matching key, because the longer key is the more
+	// specific type ("БАНКОВ ОФИС" over "ОФИС"). Equal-length ties go to the key
+	// that starts earliest in the title, so "ЕТАЖ ОТ КЪЩА" is ЕТАЖ (offset 0)
+	// rather than КЪЩА (offset 8); list order is the final tie-break.
+	best := ""
+	bestPos := -1
+	for _, t := range types {
+		pos := strings.Index(typePart, t)
+		if pos < 0 {
+			continue
+		}
+		longer := len([]rune(t)) > len([]rune(best))
+		earlier := len([]rune(t)) == len([]rune(best)) && (bestPos < 0 || pos < bestPos)
+		if longer || earlier {
+			best = t
+			bestPos = pos
+		}
+	}
+	if best != "" {
+		return best
+	}
+
+	// 3. No keyword matched at all.
 	return typePart
 }
 
@@ -189,7 +238,10 @@ func extractInfo(block string) string {
 func parseInfo(info string, l *Listing) {
 	// The info field is comma-separated with structure:
 	// [sqm, floor?, year?, description..., phone]
-	// But description can also contain commas, so we parse from left
+	// But description can also contain commas, so we parse from left.
+	// Strip any markup first and turn block-level boundaries into separators,
+	// otherwise adjacent blocks glue together ("Без комисионнаПродава се").
+	info = stripTags(info)
 
 	// Extract phone from the end first
 	phoneIdx := strings.LastIndex(info, "тел.:")
@@ -279,13 +331,12 @@ func parseInfo(info string, l *Listing) {
 	// Set description from remaining parts
 	if len(descParts) > 0 {
 		desc := strings.Join(descParts, ", ")
-		desc = strings.TrimSpace(desc)
-		desc = strings.ReplaceAll(desc, "&#39;", "'")
-		desc = strings.ReplaceAll(desc, "&amp;", "&")
-		desc = strings.ReplaceAll(desc, "&quot;", "\"")
-		if len(desc) > 500 {
-			desc = desc[:497] + "..."
-		}
+		desc = strings.TrimSpace(stdhtml.UnescapeString(desc))
+		// &nbsp; (and friends) decode to U+00A0; store a plain space instead.
+		desc = strings.ReplaceAll(desc, "\u00a0", " ")
+		// Cap by rune count. Byte slicing (desc[:497]) split 2-byte Cyrillic
+		// characters and made the JSON encoder emit U+FFFD in stored data.
+		desc = TruncateRunes(desc, 500, "...")
 		l.Description = desc
 	}
 
@@ -318,29 +369,133 @@ func parsePrice(s string) int {
 	return n
 }
 
+// blockLevelTags are the HTML elements whose boundaries become a separator when
+// tags are stripped. Without that separator the text of adjacent blocks runs
+// together, which real pages triggered: the detail description uses <br> between
+// every line, so "...ДЖЕЙМС БАУЧЪР!<br><br>Отлична локация..." was stored as
+// "...ДЖЕЙМС БАУЧЪР!Отлична локация...".
+var blockLevelTags = map[string]bool{
+	"address": true, "article": true, "aside": true, "blockquote": true,
+	"br": true, "caption": true, "dd": true, "div": true, "dl": true,
+	"dt": true, "fieldset": true, "figcaption": true, "figure": true,
+	"footer": true, "form": true, "h1": true, "h2": true, "h3": true,
+	"h4": true, "h5": true, "h6": true, "header": true, "hr": true,
+	"legend": true, "li": true, "main": true, "nav": true, "ol": true,
+	"p": true, "pre": true, "section": true, "table": true, "tbody": true,
+	"td": true, "tfoot": true, "th": true, "thead": true, "tr": true,
+	"ul": true,
+}
+
+// stripTags removes HTML tags and inserts a single space wherever a block-level
+// element boundary occurred. Inline tags (<b>, <a>, <span>) add no separator, so
+// formatting inside a word or phrase stays intact.
 func stripTags(s string) string {
 	var result strings.Builder
 	inTag := false
-	for _, r := range s {
-		if r == '<' {
-			inTag = true
-			continue
+	var tag strings.Builder
+	lastRune := rune(0)
+	writeSep := func() {
+		if result.Len() == 0 {
+			return
 		}
-		if r == '>' {
-			inTag = false
-			continue
-		}
-		if !inTag {
-			result.WriteRune(r)
+		if !unicode.IsSpace(lastRune) {
+			result.WriteByte(' ')
+			lastRune = ' '
 		}
 	}
+	for _, r := range s {
+		if inTag {
+			if r == '>' {
+				if isBlockLevelTag(tag.String()) {
+					writeSep()
+				}
+				inTag = false
+				tag.Reset()
+				continue
+			}
+			tag.WriteRune(r)
+			continue
+		}
+		if r == '<' {
+			inTag = true
+			tag.Reset()
+			continue
+		}
+		result.WriteRune(r)
+		lastRune = r
+	}
 	return strings.TrimSpace(result.String())
+}
+
+// isBlockLevelTag reports whether raw tag text ("div", "/div", "br/",
+// "div class=\"info\"") names a block-level element.
+func isBlockLevelTag(raw string) bool {
+	raw = strings.TrimLeft(strings.TrimSpace(raw), "/!?")
+	i := 0
+	for i < len(raw) {
+		c := raw[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			i++
+			continue
+		}
+		break
+	}
+	if i == 0 {
+		return false
+	}
+	return blockLevelTags[strings.ToLower(raw[:i])]
+}
+
+// TruncateRunes caps s at max runes including suffix, so callers can bound text
+// without splitting a multi-byte UTF-8 character. Byte slicing (s[:n]) corrupts
+// Cyrillic text and makes Go's JSON encoder emit U+FFFD.
+func TruncateRunes(s string, max int, suffix string) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	keep := max - len([]rune(suffix))
+	if keep < 0 {
+		keep = 0
+	}
+	return string(runes[:keep]) + suffix
 }
 
 func generateHash(l Listing) string {
 	data := fmt.Sprintf("%s|%s|%s|%d|%d|%s", l.Type, l.City, l.Neighborhood, l.PriceEUR, l.SizeSqM, l.Phone)
 	h := sha256.Sum256([]byte(data))
 	return fmt.Sprintf("%x", h)[:16]
+}
+
+func parseBulgarianMonth(month string) time.Month {
+	switch strings.ToLower(strings.TrimSpace(month)) {
+	case "януари":
+		return time.January
+	case "февруари":
+		return time.February
+	case "март":
+		return time.March
+	case "април":
+		return time.April
+	case "май":
+		return time.May
+	case "юни":
+		return time.June
+	case "юли":
+		return time.July
+	case "август":
+		return time.August
+	case "септември":
+		return time.September
+	case "октомври":
+		return time.October
+	case "ноември":
+		return time.November
+	case "декември":
+		return time.December
+	default:
+		return 0
+	}
 }
 
 // ParseTotalCount extracts the total number of listings from the page HTML.
@@ -356,6 +511,13 @@ func ParseTotalCount(html string) int {
 	return 0
 }
 
+// HasNoResultsMarker reports whether the page explicitly states that the query
+// matched nothing. Only imot.bg's own marker proves an empty result set; the
+// mere absence of listing cards does not.
+func HasNoResultsMarker(html string) bool {
+	return reNoResults.MatchString(html)
+}
+
 // ParseDetail extracts enriched data from a listing's detail page HTML.
 // Returns a DetailListing with fields only available on the detail page.
 func ParseDetail(html string) DetailListing {
@@ -366,18 +528,8 @@ func ParseDetail(html string) DetailListing {
 	textMatches := reDetailText.FindAllStringSubmatch(html, 2)
 	for _, m := range textMatches {
 		clean := stripTags(m[1])
-		clean = strings.TrimSpace(clean)
-		clean = strings.ReplaceAll(clean, "&#39;", "'")
-		clean = strings.ReplaceAll(clean, "&amp;", "&")
-		clean = strings.ReplaceAll(clean, "&quot;", "\"")
-		clean = strings.ReplaceAll(clean, "&#128204;", "")
-		clean = strings.ReplaceAll(clean, "&#10071;", "")
-		clean = strings.ReplaceAll(clean, "&#128311;", "")
-		clean = strings.ReplaceAll(clean, "&#10024;", "")
-		clean = strings.ReplaceAll(clean, "&#128205;", "")
-		clean = strings.ReplaceAll(clean, "&#128188;", "")
-		clean = strings.ReplaceAll(clean, "&#9889;", "")
-		clean = strings.ReplaceAll(clean, "&#128222;", "")
+		clean = decorativeEntities.Replace(clean)
+		clean = strings.TrimSpace(stdhtml.UnescapeString(clean))
 		clean = strings.ReplaceAll(clean, "\u00a0", " ")
 		// Skip the "В imot.bg от" line
 		if strings.HasPrefix(clean, "В imot.bg от") {
@@ -400,7 +552,7 @@ func ParseDetail(html string) DetailListing {
 				continue
 			}
 			// Seller type
-			if p == "Агенция" || p == "Частно лицо" {
+			if p == "Агенция" || p == "Частно лице" || p == "Частно лицо" {
 				d.SellerType = p
 				continue
 			}
@@ -496,11 +648,178 @@ func ParseDetail(html string) DetailListing {
 		d.AgencyURL = stripTags(m[1])
 	}
 
+	if m := reDetailViewCount.FindStringSubmatch(html); len(m) > 1 {
+		d.ViewCount = parsePrice(m[1])
+	}
+	if m := reDetailCorrectedAt.FindStringSubmatch(html); len(m) > 5 {
+		hour, _ := strconv.Atoi(m[1])
+		minute, _ := strconv.Atoi(m[2])
+		day, _ := strconv.Atoi(m[3])
+		month := parseBulgarianMonth(m[4])
+		year, _ := strconv.Atoi(m[5])
+		if month != 0 {
+			loc, err := time.LoadLocation("Europe/Sofia")
+			if err != nil {
+				loc = time.FixedZone("Europe/Sofia", 3*60*60)
+			}
+			d.CorrectedAt = time.Date(year, month, day, hour, minute, 0, 0, loc).Format(time.RFC3339)
+		}
+	}
+
 	// 5. URL from the page itself (canonical)
 	// Extract from og:url or canonical link if available
 	if m := reDetailOGURL.FindStringSubmatch(html); len(m) > 1 {
 		d.URL = m[1]
 	}
 
+	// 6. Photo URLs from og:image and gallery/CDN references.
+	photos := uniquePhotoURLs(html)
+	if len(photos) > 0 {
+		d.PhotoURL = photos[0]
+		d.PhotoURLs = photos
+	}
+
+	// 7. Feature tags from the "Особености" block.
+	if m := reFeaturesBlock.FindStringSubmatch(html); len(m) > 1 {
+		seen := make(map[string]bool)
+		for _, item := range reFeatureItem.FindAllStringSubmatch(m[1], -1) {
+			f := strings.TrimSpace(item[1])
+			if f == "" || seen[f] {
+				continue
+			}
+			seen[f] = true
+			d.Features = append(d.Features, f)
+		}
+	}
+
+	// 8. Published timestamp.
+	if m := reDetailPublishedAt.FindStringSubmatch(html); len(m) > 5 {
+		hour, _ := strconv.Atoi(m[1])
+		minute, _ := strconv.Atoi(m[2])
+		day, _ := strconv.Atoi(m[3])
+		month := parseBulgarianMonth(m[4])
+		year, _ := strconv.Atoi(m[5])
+		if month != 0 {
+			loc, err := time.LoadLocation("Europe/Sofia")
+			if err != nil {
+				loc = time.FixedZone("Europe/Sofia", 3*60*60)
+			}
+			d.PublishedAt = time.Date(year, month, day, hour, minute, 0, 0, loc).Format(time.RFC3339)
+		}
+	}
+
+	// 9. Broker block and agency office.
+	if m := reBrokerName.FindStringSubmatch(html); len(m) > 1 {
+		d.BrokerName = strings.TrimSpace(m[1])
+	}
+	if m := reBrokerPhone.FindStringSubmatch(html); len(m) > 1 {
+		phone := strings.TrimSpace(stripTags(m[1]))
+		phone = strings.NewReplacer(" ", "", "/", "", "-", "").Replace(phone)
+		d.BrokerPhone = phone
+	}
+	if m := reAgencyOffice.FindStringSubmatch(html); len(m) > 1 {
+		d.AgencyOffice = strings.TrimSpace(stripTags(m[1]))
+	}
+
+	// 10. VAT note.
+	if reVatNote.MatchString(html) {
+		d.VatNote = "Не се начислява ДДС"
+	}
+
 	return d
+}
+
+func normalizePhotoURL(url string) string {
+	url = strings.TrimSpace(url)
+	url = strings.Trim(url, `"'`)
+	if strings.HasPrefix(url, "//") {
+		return "https:" + url
+	}
+	if strings.HasPrefix(url, "http://") {
+		return "https://" + strings.TrimPrefix(url, "http://")
+	}
+	if strings.HasPrefix(url, "https://") {
+		return url
+	}
+	if strings.Contains(url, "focus.bg/imot/photosimotbg/") {
+		return "https://" + strings.TrimPrefix(url, "/")
+	}
+	return url
+}
+
+func uniquePhotoURLs(html string) []string {
+	// Deduplicate by basename: the gallery renders the same image under several
+	// size variants (/big/, /big1/, ...). Keep the largest variant seen for each
+	// image, and never downgrade when a later duplicate is smaller.
+	byBase := make(map[string]string)
+	var order []string
+	add := func(raw string) {
+		url := normalizePhotoURL(raw)
+		if url == "" {
+			return
+		}
+		base := photoBasename(url)
+		if existing, ok := byBase[base]; ok {
+			if photoVariantRank(url) <= photoVariantRank(existing) {
+				return
+			}
+			byBase[base] = url
+			for i, o := range order {
+				if photoBasename(o) == base {
+					order[i] = url
+					break
+				}
+			}
+			return
+		}
+		byBase[base] = url
+		order = append(order, url)
+	}
+
+	if m := reDetailPhoto.FindStringSubmatch(html); len(m) > 1 {
+		add(m[1])
+	}
+	for _, raw := range reImotPhotoURL.FindAllString(html, -1) {
+		add(raw)
+	}
+	return order
+}
+
+// decorativeEntities are numeric entities imot.bg bakes into listing text as
+// bullets/emoji. They are stripped while still encoded so UnescapeString does
+// not turn them into pictographs.
+var decorativeEntities = strings.NewReplacer(
+	"&#128204;", "", // pushpin
+	"&#10071;", "", // exclamation mark
+	"&#128311;", "", // blue diamond
+	"&#10024;", "", // sparkles
+	"&#128205;", "", // round pushpin
+	"&#128188;", "", // briefcase
+	"&#9889;", "", // high voltage
+	"&#128222;", "", // telephone
+)
+
+// photoVariantRank scores the size variant of a photosimotbg image URL: a
+// larger number is a larger image. /big/ is the og:image/social source and
+// outranks the /big1/ gallery render; an unmarked URL is treated as a thumbnail.
+// Ranking (rather than a one-off /big1/ swap) keeps the choice monotonic: a
+// later duplicate only replaces the stored URL when it is strictly larger.
+func photoVariantRank(url string) int {
+	switch {
+	case strings.Contains(url, "/big/"):
+		return 3
+	case strings.Contains(url, "/big1/"):
+		return 2
+	default:
+		return 0
+	}
+}
+
+// photoBasename extracts a stable per-image key from a photosimotbg URL,
+// e.g. ".../2/768//big/2c178773245606768_e1.jpg" -> "2c178773245606768_e1.jpg".
+func photoBasename(url string) string {
+	if i := strings.LastIndex(url, "/"); i >= 0 {
+		return url[i+1:]
+	}
+	return url
 }

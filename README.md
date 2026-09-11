@@ -43,7 +43,8 @@ Scrapes imot.bg live and outputs results to stdout. Does NOT store in database.
 | `--min-sqm` | int | Minimum size in sq.m |
 | `--max-sqm` | int | Maximum size in sq.m |
 | `--rent` | bool | Search rentals instead of sales |
-| `--json` | bool | JSON output (for piping/programmatic use) |
+| `--json` | bool | JSON output (for piping/programmatic use). Default shape is a bare listing array for backwards compatibility. |
+| `--with-meta` | bool | With `--json`, output a metadata envelope: listings, requested/resolved neighborhood, total count, pages fetched/planned, partial flag, and page errors. |
 | `--agent` | bool | Terse one-line format optimized for LLM consumption |
 | `--quiet` | bool | Only show count + average price |
 
@@ -112,7 +113,7 @@ Each listing has these fields:
 | ID | `id` | string | Extracted from imot.bg URL (e.g. `1b177425523801314`) |
 | Type | `type` | string | Uppercase Bulgarian (e.g. `2-СТАЕН`, `МАГАЗИН`) |
 | City | `city` | string | Bulgarian city name (e.g. `София`) |
-| Neighborhood | `neighborhood` | string | Bulgarian neighborhood name (e.g. `Лозенец`) |
+| Neighborhood | `neighborhood` | string | Bulgarian neighborhood/location text from the listing card (e.g. `Лозенец`) |
 | Price EUR | `price_eur` | int | Price in euros. `0` if not listed. |
 | Price BGN | `price_bgn` | int | Price in leva. |
 | Size | `size_sqm` | int | Area in square meters |
@@ -123,6 +124,44 @@ Each listing has these fields:
 | Agency | `agency` | string | Agency name. Empty string = owner listing. |
 | URL | `url` | string | Full imot.bg listing URL |
 | Scraped At | `scraped_at` | string | ISO 8601 timestamp |
+
+### Search Metadata Envelope
+
+`search --json` remains a bare array of listings. Add `--with-meta` for robust automation:
+
+```bash
+./imot search --city София --neighborhood Лозенец --pages 1 --json --with-meta
+```
+
+Envelope fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `listings` | array | Parsed listing rows after CLI-side filtering/deduplication |
+| `requested_city` | string | Normalized city requested by the caller |
+| `requested_neighborhood` | string | Neighborhood text requested by the caller |
+| `resolved_neighborhood_slug` | string | URL slug resolved and used for server-side filtering |
+| `requested_type` | string | Property type requested by the caller |
+| `total_count` | int | Count parsed from imot.bg first page, when available |
+| `pages_planned` | int | Pages the CLI intended to fetch |
+| `pages_fetched` | int | Pages successfully fetched and parsed |
+| `partial` | bool | `true` when the scrape may be incomplete |
+| `server_filters` | array | Names of the filters imot.bg applied in the request URL (`city`, `neighborhood`, `type`). A name here narrowed the source query, so `total_count` already excludes anything outside it. |
+| `client_filters` | array | Names of the filters the CLI applied to already-downloaded rows (`min_price`, `max_price`, `min_sqm`, `max_sqm`). A name here did **not** narrow the source query: `total_count` still counts listings outside the filter. |
+| `empty_verified` | bool | `true` only when imot.bg explicitly reported zero matches (its `Няма намерени обяви` marker). A page that merely yielded no cards is reported through `partial`/`errors` instead, never as `empty_verified`. |
+| `errors` | array | Page-level recoverable failures. Each entry carries `page`, `url`, `error` and a machine-readable `kind`: `fetch_failed`, `unreadable_page`, `total_count_unknown`, or `detail_enrichment_failed`. |
+
+`--min-price`, `--max-price`, `--min-sqm` and `--max-sqm` are client-side only: the
+imot.bg request URL has no price or size parameter, so `client_filters` lists them
+for the query while `total_count` still counts listings outside the band. Callers
+that need the source query itself narrowed must decompose the query.
+
+An unreadable page (block, captcha, changed layout) returns `partial=true` with an
+`unreadable_page` error and an empty `listings` array, so `listings: []` plus
+`total_count: 0` never silently means "verified empty" unless `empty_verified` is
+true.
+
+Scheduled workers should treat `partial=true` as unsafe for disappearance detection.
 
 ## SQLite Database
 

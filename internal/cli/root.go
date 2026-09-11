@@ -28,8 +28,10 @@ var (
 	flagNeighborhood string
 	flagPages        int
 	flagJSON         bool
+	flagWithMeta     bool
 	flagAgent        bool
 	flagQuiet        bool
+	flagFull         bool
 	flagRent         bool
 	flagInterval     string
 )
@@ -44,9 +46,16 @@ func addSearchFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&flagNeighborhood, "neighborhood", "", "Neighborhood (partial match)")
 	cmd.Flags().IntVar(&flagPages, "pages", 0, "Number of pages to fetch (0=all pages, auto-detect from total count)")
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "JSON output on stdout")
+	cmd.Flags().BoolVar(&flagWithMeta, "with-meta", false, "When used with --json, output search metadata envelope instead of bare listing array")
 	cmd.Flags().BoolVar(&flagAgent, "agent", false, "Terse LLM-optimized output")
-	cmd.Flags().BoolVar(&flagQuiet, "quiet", false, "Only count + average price")
+	cmd.Flags().BoolVar(&flagQuiet, "quiet", false, "Slim projection + stats (with --json: {stats, listings} envelope; without: one-line summary)")
 	cmd.Flags().BoolVar(&flagRent, "rent", false, "Search rentals instead of sales")
+}
+
+// addFullFlag registers the --full detail-enrichment flag (search only).
+// Concurrency and pacing are built into the scraper; no tuning flags exist.
+func addFullFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&flagFull, "full", false, "Enrich every listing with detail-page data (features, published date, broker, photos); automatic polite concurrency")
 }
 
 // NewRootCommand creates the root cobra command
@@ -73,10 +82,11 @@ func newSearchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search",
 		Short: "Search listings from imot.bg (live)",
-		Long:  "Fetches listings from imot.bg and displays them. Use --json for machine-readable output.",
+		Long:  "Fetches listings from imot.bg and displays them. Use --json for machine-readable output, --quiet for the slim projection, --full for detail enrichment.",
 		RunE:  runSearch,
 	}
 	addSearchFlags(cmd)
+	addFullFlag(cmd)
 	return cmd
 }
 
@@ -161,7 +171,7 @@ func newDetailCmd() *cobra.Command {
 func runDetail(cmd *cobra.Command, args []string) error {
 	url := args[0]
 	if !strings.HasPrefix(url, "https://www.imot.bg/obiava-") {
-		return fmt.Errorf("URL must be an imot.bg listing URL (e.g. https://www.imot.bg/obiava-...)" )
+		return fmt.Errorf("URL must be an imot.bg listing URL (e.g. https://www.imot.bg/obiava-...)")
 	}
 
 	client := scraper.NewClient()
@@ -206,16 +216,86 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	client := scraper.NewClient()
-	listings, err := client.Search(params)
+	result, err := client.SearchWithMeta(params)
 	if err != nil {
 		return fmt.Errorf("search failed: %w", err)
 	}
 
 	// Client-side filtering
-	listings = dedupListings(listings)
-	listings = filterListings(listings, params, flagNeighborhood != "")
+	result.Listings = dedupListings(result.Listings)
+	result.Listings = filterListings(result.Listings, params, flagNeighborhood != "")
 
-	return outputListings(listings)
+	// A partial result must keep listings as an array, never null: consumers read
+	// a null/absent array with total_count 0 as "verified empty", which is the
+	// exact misreading an unreadable page must not allow. The envelope types
+	// listings as an array even when the scrape or the client-side filter emptied
+	// the set; empty_verified and partial carry the meaning.
+	if result.Listings == nil {
+		result.Listings = []scraper.Listing{}
+	}
+
+	if flagFull && flagQuiet {
+		return fmt.Errorf("choose either --full or --quiet, not both")
+	}
+
+	if flagFull {
+		// Polite concurrent detail enrichment. Individual failures are
+		// reported and marked partial; they never abort the run.
+		fetchErrs := client.FetchDetailsConcurrent(result.Listings)
+		var failed int
+		for i, ferr := range fetchErrs {
+			if ferr != nil {
+				failed++
+				fmt.Fprintf(os.Stderr, "detail failed for %s: %v\n", result.Listings[i].ID, ferr)
+			}
+		}
+		if failed > 0 {
+			result.Partial = true
+			result.Errors = append(result.Errors, scraper.SearchError{
+				Page:  0,
+				URL:   "detail-enrichment",
+				Kind:  scraper.SearchErrorDetailEnrichment,
+				Error: fmt.Sprintf("%d/%d detail pages failed", failed, len(fetchErrs)),
+			})
+		}
+	}
+
+	stats := scraper.ComputeStats(result.Listings)
+
+	if flagJSON && flagQuiet {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetEscapeHTML(false)
+		return enc.Encode(scraper.QuietResult{
+			RequestedCity:         flagCity,
+			RequestedNeighborhood: flagNeighborhood,
+			RequestedType:         flagType,
+			Rent:                  flagRent,
+			TotalCount:            result.TotalCount,
+			PagesFetched:          result.PagesFetched,
+			Partial:               result.Partial,
+			Stats:                 stats,
+			Listings:              scraper.ToSlimListings(result.Listings),
+		})
+	}
+
+	if flagFull {
+		result.Stats = &stats
+		if flagJSON && flagWithMeta {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetEscapeHTML(false)
+			return enc.Encode(result)
+		}
+		fmt.Fprintf(os.Stderr, "Stats: %d listings | mean €%.0f | median €%.0f | p25 €%.0f | p75 €%.0f | median %.1f €/m² | agency %d | private %d\n",
+			stats.Count, stats.MeanEUR, stats.MedianEUR, stats.P25EUR, stats.P75EUR, stats.MedianEURPerSqM, stats.AgencyCount, stats.PrivateCount)
+		return outputListings(result.Listings)
+	}
+
+	if flagJSON && flagWithMeta {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetEscapeHTML(false)
+		return enc.Encode(result)
+	}
+	return outputListings(result.Listings)
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
@@ -237,14 +317,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	client := scraper.NewClient()
-	listings, err := client.Search(params)
+	result, err := client.SearchWithMeta(params)
 	if err != nil {
 		return fmt.Errorf("search failed: %w", err)
 	}
+	if result.Partial {
+		return fmt.Errorf("search returned partial results; refusing to sync incomplete scrape")
+	}
 
 	// Client-side filtering
-	listings = dedupListings(listings)
-	listings = filterListings(listings, params, flagNeighborhood != "")
+	result.Listings = dedupListings(result.Listings)
+	result.Listings = filterListings(result.Listings, params, flagNeighborhood != "")
 
 	st, err := store.New("")
 	if err != nil {
@@ -252,24 +335,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	defer st.Close()
 
-	newCount := 0
-	for _, l := range listings {
-		isNew, err := st.UpsertListing(l)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: upsert failed: %v\n", err)
-			continue
-		}
-		if isNew {
-			newCount++
-		}
-	}
-
-	err = st.InsertSyncLog(flagCity, flagType, flagPages, len(listings), newCount)
+	newCount, err := st.SyncListings(flagCity, flagType, result.PagesFetched, result.Listings)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: logging sync: %v\n", err)
+		return fmt.Errorf("syncing listings: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Synced %d listings (%d new) from %s\n", len(listings), newCount, flagCity)
+	fmt.Fprintf(os.Stderr, "Synced %d listings (%d new) from %s\n", len(result.Listings), newCount, flagCity)
 	return nil
 }
 
@@ -339,10 +410,7 @@ func runStats(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "%-30s %8s %12s %10s\n", "Neighborhood", "Count", "Avg Price", "Avg €/sqm")
 		fmt.Fprintf(os.Stderr, "%-30s %8s %12s %10s\n", "──────────────────────────────", "────────", "────────────", "──────────")
 		for nb, s := range stats.ByNeighborhood {
-			name := nb
-			if len(name) > 28 {
-				name = name[:28]
-			}
+			name := scraper.TruncateRunes(nb, 28, "")
 			fmt.Fprintf(os.Stderr, "%-30s %8d €%10.0f €%8.0f\n", name, s.Count, s.AvgPrice, s.AvgPPS)
 		}
 	}
@@ -454,7 +522,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 		}
 
 		listings = dedupListings(listings)
-	listings = filterListings(listings, params, flagNeighborhood != "")
+		listings = filterListings(listings, params, flagNeighborhood != "")
 
 		newCount := 0
 		for _, l := range listings {
@@ -555,12 +623,12 @@ func outputListings(listings []scraper.Listing) error {
 			formatListingAgent(l)
 		}
 	case flagQuiet:
-		var total int
-		for _, l := range listings {
-			total += l.PriceEUR
+		s := scraper.ComputeStats(listings)
+		if s.PricedCount > 0 {
+			fmt.Fprintf(os.Stderr, "Listings: %d | mean €%.0f | median €%.0f | median %.1f €/m²\n", s.Count, s.MeanEUR, s.MedianEUR, s.MedianEURPerSqM)
+		} else {
+			fmt.Fprintf(os.Stderr, "Listings: %d (no priced listings)\n", s.Count)
 		}
-		avg := float64(total) / float64(len(listings))
-		fmt.Fprintf(os.Stderr, "Listings: %d | Avg price: €%.0f\n", len(listings), avg)
 	default:
 		w := tabwriter.NewWriter(os.Stderr, 0, 0, 2, ' ', 0)
 		fmt.Fprintf(w, "PRICE\tSIZE\tTYPE\tLOCATION\tFLOOR\tYEAR\n")
@@ -580,11 +648,9 @@ func outputListings(listings []scraper.Listing) error {
 }
 
 func formatListingAgent(l scraper.Listing) {
-	// Terse one-line format for LLM consumption
-	desc := l.Description
-	if len(desc) > 100 {
-		desc = desc[:97] + "..."
-	}
+	// Terse one-line format for LLM consumption. Truncate by rune count: byte
+	// slicing a 2-byte Cyrillic character emits U+FFFD.
+	desc := scraper.TruncateRunes(l.Description, 100, "...")
 	fmt.Printf("€%d | %d sqm | %s | %s, %s | floor:%s | year:%s | tel:%s | %s\n",
 		l.PriceEUR, l.SizeSqM, l.Type, l.City, l.Neighborhood,
 		l.Floor, l.YearBuilt, l.Phone, desc)

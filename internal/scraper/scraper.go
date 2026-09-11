@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/text/encoding/charmap"
@@ -16,12 +17,17 @@ import (
 )
 
 const (
-	BaseURL           = "https://www.imot.bg/obiavi"
-	FormURL           = "https://www.imot.bg/pcgi/imot.cgi"
-	UserAgent         = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-	SearchPageDelay   = 3000 * time.Millisecond // 3s between search result pages
-	DetailPageDelay   = 8000 * time.Millisecond // 8s between detail page fetches
-	PerPage           = 40
+	BaseURL         = "https://www.imot.bg/obiavi"
+	FormURL         = "https://www.imot.bg/pcgi/imot.cgi"
+	UserAgent       = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	SearchPageDelay = 3000 * time.Millisecond // 3s between search result pages
+	DetailPageDelay = 8000 * time.Millisecond // 8s between detail page fetches (single-detail path)
+	PerPage         = 40
+
+	// Polite concurrency defaults for search --full detail enrichment.
+	// Baked in on purpose: callers (and models) never pass these as flags.
+	DetailWorkers         = 3                       // simultaneous detail fetches
+	ConcurrentDetailDelay = 2000 * time.Millisecond // base spacing per worker, +-30% jitter
 )
 
 // Client is the HTTP scraper for imot.bg
@@ -79,7 +85,12 @@ func (c *Client) FetchPage(pageURL string) (string, error) {
 // Applies rate limiting before the request to mimic human browsing.
 func (c *Client) FetchDetail(listingURL string) (DetailListing, error) {
 	jitteredSleep(DetailPageDelay)
+	return c.fetchDetailNow(listingURL)
+}
 
+// fetchDetailNow fetches and parses a detail page without the pre-request
+// politeness sleep; the concurrent pool applies its own spacing.
+func (c *Client) fetchDetailNow(listingURL string) (DetailListing, error) {
 	html, err := c.FetchPage(listingURL)
 	if err != nil {
 		return DetailListing{}, fmt.Errorf("fetching detail page: %w", err)
@@ -90,6 +101,42 @@ func (c *Client) FetchDetail(listingURL string) (DetailListing, error) {
 		detail.URL = listingURL
 	}
 	return detail, nil
+}
+
+// FetchDetailsConcurrent enriches listings with detail-page data using a
+// bounded, polite worker pool (DetailWorkers x ConcurrentDetailDelay +-30%);
+// effective spacing stays under ~0.7 requests/second. No flags required.
+// Returns one error per listing index (nil when that listing enriched fine);
+// individual failures never abort the whole run.
+func (c *Client) FetchDetailsConcurrent(listings []Listing) []error {
+	errs := make([]error, len(listings))
+	if len(listings) == 0 {
+		return errs
+	}
+
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < DetailWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				jitteredSleep(ConcurrentDetailDelay)
+				detail, err := c.fetchDetailNow(listings[i].URL)
+				if err != nil {
+					errs[i] = err
+					continue
+				}
+				listings[i].Detail = &detail
+			}
+		}()
+	}
+	for i := range listings {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+	return errs
 }
 
 // resolveNeighborhoodSlug converts a Bulgarian neighborhood name to a URL slug.
@@ -295,38 +342,151 @@ func resolveTypeSlug(propType string) string {
 // When params.Pages == 0, it auto-detects the total count from the first page
 // and scrapes all pages. When params.Pages > 0, it scrapes exactly that many pages.
 func (c *Client) Search(params SearchParams) ([]Listing, error) {
+	result, err := c.SearchWithMeta(params)
+	if err != nil {
+		return nil, err
+	}
+	// An unreadable first page yields no listings plus a typed error entry.
+	// Surface it here too, so callers of Search (which discards the metadata)
+	// cannot read a block/captcha/layout failure as an empty market.
+	if len(result.Listings) == 0 && !result.EmptyVerified {
+		for _, e := range result.Errors {
+			if e.Kind == SearchErrorUnreadablePage {
+				return nil, fmt.Errorf("%w: %s", ErrUnreadablePage, e.URL)
+			}
+		}
+	}
+	return result.Listings, nil
+}
+
+// SearchFilters documents, for one query, which filters the CLI applies in the
+// imot.bg request URL (server_filters) and which it applies only to rows it has
+// already downloaded (client_filters).
+//
+// The URL built by buildURLWithSlug carries only category, city, neighborhood
+// and type. No price or size parameter is part of that request (the site's
+// filtered-search form is not implemented here and its URL parameters have not
+// been verified), so min_price, max_price, min_sqm and max_sqm can only narrow
+// the downloaded rows. A caller that needs a price or size band to bound the
+// source must decompose the query itself, because total_count still counts
+// listings outside the band.
+// ServerFilterSupport names every filter this CLI can apply at the SOURCE,
+// regardless of what one query actually used.
+//
+// This is deliberately a separate answer from SearchFilters. SearchFilters reports
+// what a particular request narrowed, so an unfiltered query truthfully omits
+// "type". A client that needs to decide which dimensions it may decompose along —
+// splitting a neighbourhood too large for one page into per-type queries — needs
+// the capability instead, and reading the per-query answer there makes it give up
+// on decomposition entirely.
+//
+// Price and size are absent on purpose: the request URL carries no such parameter,
+// so they can only ever narrow rows that were already downloaded.
+func ServerFilterSupport() []string {
+	return []string{"city", "neighborhood", "type"}
+}
+
+func SearchFilters(params SearchParams, neighborhoodSlug string) (server, client []string) {
+	server = []string{}
+	client = []string{}
+	if resolveCitySlug(params.City) != "" {
+		server = append(server, "city")
+	}
+	if neighborhoodSlug != "" {
+		server = append(server, "neighborhood")
+	}
+	if params.Type != "" && resolveTypeSlug(params.Type) != "" {
+		server = append(server, "type")
+	}
+	if params.MinPrice > 0 {
+		client = append(client, "min_price")
+	}
+	if params.MaxPrice > 0 {
+		client = append(client, "max_price")
+	}
+	if params.MinSqM > 0 {
+		client = append(client, "min_sqm")
+	}
+	if params.MaxSqM > 0 {
+		client = append(client, "max_sqm")
+	}
+	return server, client
+}
+
+// SearchWithMeta fetches listings and returns scrape integrity metadata for automation.
+func (c *Client) SearchWithMeta(params SearchParams) (SearchResult, error) {
+	result := SearchResult{
+		RequestedCity:         params.City,
+		RequestedNeighborhood: params.Neighborhood,
+		RequestedType:         params.Type,
+		// Never nil: the envelope contract types listings as an array, and a
+		// null array with total_count 0 is what consumers read as "verified
+		// empty". EmptyVerified carries that meaning explicitly instead.
+		Listings: []Listing{},
+	}
+
 	// Resolve neighborhood slug if neighborhood is specified
 	neighborhoodSlug := ""
 	if params.Neighborhood != "" {
 		neighborhoodSlug = c.resolveNeighborhoodSlug(params)
+		result.ResolvedNeighborhoodSlug = neighborhoodSlug
 	}
+	result.ServerFilters, result.ClientFilters = SearchFilters(params, neighborhoodSlug)
+	result.ServerFilterSupport = ServerFilterSupport()
 
 	// Fetch page 1
 	url1 := buildURLWithSlug(params, neighborhoodSlug, 1)
 	html, err := c.FetchPage(url1)
 	if err != nil {
-		return nil, fmt.Errorf("page 1: %w", err)
+		return result, fmt.Errorf("page 1: %w", err)
 	}
 
 	listings := ParseListings(html)
-	allListings := listings
+	result.Listings = append(result.Listings, listings...)
+	result.PagesFetched = 1
+	result.TotalCount = ParseTotalCount(html)
+	noResultsMarker := HasNoResultsMarker(html)
+
+	// A page with no cards, no source total and no explicit no-results marker is
+	// not a search result page: a block page, a captcha or a changed layout.
+	// Reporting it as total_count 0 would be indistinguishable from an empty
+	// market, so surface it as a typed page failure instead.
+	if len(listings) == 0 && result.TotalCount == 0 && !noResultsMarker {
+		result.Partial = true
+		result.PagesFetched = 0
+		result.PagesPlanned = 1
+		result.Errors = append(result.Errors, SearchError{
+			Page:  1,
+			URL:   url1,
+			Kind:  SearchErrorUnreadablePage,
+			Error: ErrUnreadablePage.Error(),
+		})
+		return result, nil
+	}
+
+	// Only imot.bg's own marker proves an empty result set.
+	if noResultsMarker && len(listings) == 0 && result.TotalCount == 0 {
+		result.EmptyVerified = true
+	}
 
 	// Determine total pages
 	totalPages := params.Pages
 	if params.Pages == 0 {
-		totalCount := ParseTotalCount(html)
-		if totalCount > 0 {
-			totalPages = (totalCount + PerPage - 1) / PerPage
+		if result.TotalCount > 0 {
+			totalPages = (result.TotalCount + PerPage - 1) / PerPage
 		} else {
 			// Couldn't parse total count (e.g., "1000+ обяви").
 			// Use a safety cap and rely on break-on-empty-listings.
 			if len(listings) >= PerPage {
 				totalPages = reMaxPages
+				result.Partial = true
+				result.Errors = append(result.Errors, SearchError{Page: 1, URL: url1, Kind: SearchErrorTotalCountUnknown, Error: "total count unavailable; using safety page cap"})
 			} else {
 				totalPages = 1
 			}
 		}
 	}
+	result.PagesPlanned = totalPages
 
 	// Fetch remaining pages
 	for page := 2; page <= totalPages; page++ {
@@ -335,17 +495,34 @@ func (c *Client) Search(params SearchParams) ([]Listing, error) {
 		pageURL := buildURLWithSlug(params, neighborhoodSlug, page)
 		pageHTML, err := c.FetchPage(pageURL)
 		if err != nil {
-			// Stop on error — return what we have
+			result.Partial = true
+			result.Errors = append(result.Errors, SearchError{Page: page, URL: pageURL, Kind: SearchErrorFetchFailed, Error: err.Error()})
 			break
 		}
 
 		pageListings := ParseListings(pageHTML)
 		if len(pageListings) == 0 {
-			// No more listings — we've reached the end
+			// Reaching the end is only credible when the source says so. A page
+			// that is neither a result page nor the explicit no-results page is
+			// a read failure when a later page was genuinely expected.
+			if !HasNoResultsMarker(pageHTML) && (params.Pages > 0 || result.TotalCount > 0) {
+				result.Partial = true
+				result.Errors = append(result.Errors, SearchError{
+					Page:  page,
+					URL:   pageURL,
+					Kind:  SearchErrorUnreadablePage,
+					Error: ErrUnreadablePage.Error(),
+				})
+			}
 			break
 		}
-		allListings = append(allListings, pageListings...)
+		result.PagesFetched++
+		result.Listings = append(result.Listings, pageListings...)
 	}
 
-	return allListings, nil
+	if result.TotalCount > 0 && len(result.Listings) < result.TotalCount && result.PagesFetched < result.PagesPlanned {
+		result.Partial = true
+	}
+
+	return result, nil
 }

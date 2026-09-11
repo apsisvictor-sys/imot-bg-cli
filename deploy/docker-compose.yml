@@ -1,0 +1,41 @@
+# imot-mcp — ChatGPT-facing MCP endpoint for Urban Estate.
+#
+# Runs on the Hostinger VPS next to the Broker Essentials workers. It joins the
+# same imot-vpn network so scraping leaves through the established VPN egress
+# instead of the VPS IP, and it publishes only to 127.0.0.1 so nginx is the sole
+# public entry point.
+#
+#   docker compose -f /opt/imot-mcp/docker-compose.yml up -d
+services:
+  imot-mcp:
+    image: imot-mcp:current
+    container_name: imot-mcp
+    restart: unless-stopped
+    env_file:
+      - /opt/imot-mcp/imot-mcp.env
+    environment:
+      # Inside the container the server must listen on all interfaces: Docker
+      # port publishing arrives on the container's eth0, never on its loopback.
+      # Public exposure is prevented by publishing to 127.0.0.1 on the host.
+      IMOT_MCP_ADDR: 0.0.0.0:8099
+      IMOT_MCP_DB: /data/mcp-cache.db
+      # Scraping egress. Never proxy the MCP endpoint itself; only outbound
+      # imot.bg traffic uses this.
+      HTTP_PROXY: http://imot-vpn:8888
+      HTTPS_PROXY: http://imot-vpn:8888
+      NO_PROXY: localhost,127.0.0.1
+    ports:
+      - "127.0.0.1:8099:8099"
+    volumes:
+      - /opt/imot-mcp/data:/data
+    mem_limit: 256m
+    cpus: 0.50
+    networks:
+      - services_default
+      - imot-vpn_default
+
+networks:
+  services_default:
+    external: true
+  imot-vpn_default:
+    external: true

@@ -1,4 +1,8 @@
-imot
+# Built binaries only: patterns are anchored so they cannot swallow the
+# cmd/imot and cmd/imot-mcp source directories.
+/imot
+/imot-mcp
+/deploy/imot-mcp
 imot.db
 *.db
 view.py

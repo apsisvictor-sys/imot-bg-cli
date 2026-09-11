@@ -1,0 +1,766 @@
+{
+  "verifiedAt": "2026-05-11",
+  "total": 189,
+  "valid": [
+    {
+      "slug": "7-mi-11-ti-kilometar",
+      "name": "7-ми 11-ти километър"
+    },
+    {
+      "slug": "abdovitsa",
+      "name": "Абдовица"
+    },
+    {
+      "slug": "banishora",
+      "name": "Банишора"
+    },
+    {
+      "slug": "belite-brezi",
+      "name": "Белите брези"
+    },
+    {
+      "slug": "benkovski",
+      "name": "Бенковски"
+    },
+    {
+      "slug": "borovo",
+      "name": "Борово"
+    },
+    {
+      "slug": "botunets",
+      "name": "Ботунец"
+    },
+    {
+      "slug": "botunets-2",
+      "name": "Ботунец 2"
+    },
+    {
+      "slug": "boyana",
+      "name": "Бояна"
+    },
+    {
+      "slug": "bakston",
+      "name": "Бъкстон"
+    },
+    {
+      "slug": "vitosha",
+      "name": "Витоша"
+    },
+    {
+      "slug": "voenna-rampa",
+      "name": "Военна рампа"
+    },
+    {
+      "slug": "vrazhdebna",
+      "name": "Враждебна"
+    },
+    {
+      "slug": "vrabnitsa-1",
+      "name": "Връбница 1"
+    },
+    {
+      "slug": "vrabnitsa-2",
+      "name": "Връбница 2"
+    },
+    {
+      "slug": "gevgeliyski",
+      "name": "Гевгелийски"
+    },
+    {
+      "slug": "geo-milev",
+      "name": "Гео Милев"
+    },
+    {
+      "slug": "gorna-banya",
+      "name": "Горна баня"
+    },
+    {
+      "slug": "gorublyane",
+      "name": "Горубляне"
+    },
+    {
+      "slug": "gotse-delchev",
+      "name": "Гоце Делчев"
+    },
+    {
+      "slug": "gradina",
+      "name": "Градина"
+    },
+    {
+      "slug": "dianabad",
+      "name": "Дианабад"
+    },
+    {
+      "slug": "dimitar-milenkov",
+      "name": "Димитър Миленков"
+    },
+    {
+      "slug": "doktorski-pametnik",
+      "name": "Докторски паметник"
+    },
+    {
+      "slug": "dragalevtsi",
+      "name": "Драгалевци"
+    },
+    {
+      "slug": "druzhba-1",
+      "name": "Дружба 1"
+    },
+    {
+      "slug": "druzhba-2",
+      "name": "Дружба 2"
+    },
+    {
+      "slug": "darvenitsa",
+      "name": "Дървеница"
+    },
+    {
+      "slug": "eksperimentalen",
+      "name": "Експериментален"
+    },
+    {
+      "slug": "zapaden-park",
+      "name": "Западен парк"
+    },
+    {
+      "slug": "zaharna-fabrika",
+      "name": "Захарна фабрика"
+    },
+    {
+      "slug": "zona-b-18",
+      "name": "Зона Б-18"
+    },
+    {
+      "slug": "zona-b-19",
+      "name": "Зона Б-19"
+    },
+    {
+      "slug": "zona-b-5",
+      "name": "Зона Б-5"
+    },
+    {
+      "slug": "zona-b-5-3",
+      "name": "Зона Б-5-3"
+    },
+    {
+      "slug": "ivan-vazov",
+      "name": "Иван Вазов"
+    },
+    {
+      "slug": "izgrev",
+      "name": "Изгрев"
+    },
+    {
+      "slug": "iztok",
+      "name": "Изток"
+    },
+    {
+      "slug": "ilinden",
+      "name": "Илинден"
+    },
+    {
+      "slug": "iliyantsi",
+      "name": "Илиянци"
+    },
+    {
+      "slug": "karpuzitsa",
+      "name": "Карпузица"
+    },
+    {
+      "slug": "knyazhevo",
+      "name": "Княжево"
+    },
+    {
+      "slug": "krasna-polyana-1",
+      "name": "Красна поляна 1"
+    },
+    {
+      "slug": "krasna-polyana-2",
+      "name": "Красна поляна 2"
+    },
+    {
+      "slug": "krasna-polyana-3",
+      "name": "Красна поляна 3"
+    },
+    {
+      "slug": "krasno-selo",
+      "name": "Красно село"
+    },
+    {
+      "slug": "kremikovtsi",
+      "name": "Кремиковци"
+    },
+    {
+      "slug": "krastova-vada",
+      "name": "Кръстова вада"
+    },
+    {
+      "slug": "lagera",
+      "name": "Лагера"
+    },
+    {
+      "slug": "levski",
+      "name": "Левски"
+    },
+    {
+      "slug": "levski-v",
+      "name": "Левски В"
+    },
+    {
+      "slug": "levski-g",
+      "name": "Левски Г"
+    },
+    {
+      "slug": "letishte-sofiya",
+      "name": "Летище София"
+    },
+    {
+      "slug": "lozenets",
+      "name": "Лозенец"
+    },
+    {
+      "slug": "lyulin-tsentar",
+      "name": "Люлин - център"
+    },
+    {
+      "slug": "lyulin-1",
+      "name": "Люлин 1"
+    },
+    {
+      "slug": "lyulin-2",
+      "name": "Люлин 2"
+    },
+    {
+      "slug": "lyulin-3",
+      "name": "Люлин 3"
+    },
+    {
+      "slug": "lyulin-4",
+      "name": "Люлин 4"
+    },
+    {
+      "slug": "lyulin-5",
+      "name": "Люлин 5"
+    },
+    {
+      "slug": "lyulin-6",
+      "name": "Люлин 6"
+    },
+    {
+      "slug": "lyulin-7",
+      "name": "Люлин 7"
+    },
+    {
+      "slug": "lyulin-8",
+      "name": "Люлин 8"
+    },
+    {
+      "slug": "lyulin-9",
+      "name": "Люлин 9"
+    },
+    {
+      "slug": "lyulin-10",
+      "name": "Люлин 10"
+    },
+    {
+      "slug": "malashevtsi",
+      "name": "Малашевци"
+    },
+    {
+      "slug": "malinova-dolina",
+      "name": "Малинова долина"
+    },
+    {
+      "slug": "manastirski-livadi",
+      "name": "Манастирски ливади"
+    },
+    {
+      "slug": "meditsinska-akademiya",
+      "name": "Медицинска академия"
+    },
+    {
+      "slug": "mladost-1",
+      "name": "Младост 1"
+    },
+    {
+      "slug": "mladost-1a",
+      "name": "Младост 1А"
+    },
+    {
+      "slug": "mladost-2",
+      "name": "Младост 2"
+    },
+    {
+      "slug": "mladost-3",
+      "name": "Младост 3"
+    },
+    {
+      "slug": "mladost-4",
+      "name": "Младост 4"
+    },
+    {
+      "slug": "moderno-predgradie",
+      "name": "Модерно предградие"
+    },
+    {
+      "slug": "musagenitsa",
+      "name": "Мусагеница"
+    },
+    {
+      "slug": "nadezhda-1",
+      "name": "Надежда 1"
+    },
+    {
+      "slug": "nadezhda-2",
+      "name": "Надежда 2"
+    },
+    {
+      "slug": "nadezhda-3",
+      "name": "Надежда 3"
+    },
+    {
+      "slug": "nadezhda-4",
+      "name": "Надежда 4"
+    },
+    {
+      "slug": "npz-iztok",
+      "name": "НПЗ Изток"
+    },
+    {
+      "slug": "npz-iskar",
+      "name": "НПЗ Искър"
+    },
+    {
+      "slug": "npz-sredets",
+      "name": "НПЗ Средец"
+    },
+    {
+      "slug": "npz-hadzhi-dimitar",
+      "name": "НПЗ Хаджи Димитър"
+    },
+    {
+      "slug": "obelya",
+      "name": "Обеля"
+    },
+    {
+      "slug": "obelya-1",
+      "name": "Обеля 1"
+    },
+    {
+      "slug": "obelya-2",
+      "name": "Обеля 2"
+    },
+    {
+      "slug": "oborishte",
+      "name": "Оборище"
+    },
+    {
+      "slug": "ovcha-kupel",
+      "name": "Овча купел"
+    },
+    {
+      "slug": "ovcha-kupel-1",
+      "name": "Овча купел 1"
+    },
+    {
+      "slug": "ovcha-kupel-2",
+      "name": "Овча купел 2"
+    },
+    {
+      "slug": "orlandovtsi",
+      "name": "Орландовци"
+    },
+    {
+      "slug": "pavlovo",
+      "name": "Павлово"
+    },
+    {
+      "slug": "pz-iliyantsi",
+      "name": "ПЗ Илиянци"
+    },
+    {
+      "slug": "pz-hladilnika",
+      "name": "ПЗ Хладилника"
+    },
+    {
+      "slug": "poduyane",
+      "name": "Подуяне"
+    },
+    {
+      "slug": "poligona",
+      "name": "Полигона"
+    },
+    {
+      "slug": "razsadnika",
+      "name": "Разсадника"
+    },
+    {
+      "slug": "reduta",
+      "name": "Редута"
+    },
+    {
+      "slug": "republika",
+      "name": "Република"
+    },
+    {
+      "slug": "republika-2",
+      "name": "Република 2"
+    },
+    {
+      "slug": "sveta-troitsa",
+      "name": "Света Троица"
+    },
+    {
+      "slug": "svoboda",
+      "name": "Свобода"
+    },
+    {
+      "slug": "serdika",
+      "name": "Сердика"
+    },
+    {
+      "slug": "seslavtsi",
+      "name": "Сеславци"
+    },
+    {
+      "slug": "simeonovo",
+      "name": "Симеоново"
+    },
+    {
+      "slug": "slaviya",
+      "name": "Славия"
+    },
+    {
+      "slug": "slatina",
+      "name": "Слатина"
+    },
+    {
+      "slug": "spz-moderno-predgradie",
+      "name": "СПЗ Модерно предградие"
+    },
+    {
+      "slug": "spz-slatina",
+      "name": "СПЗ Слатина"
+    },
+    {
+      "slug": "strelbishte",
+      "name": "Стрелбище"
+    },
+    {
+      "slug": "studentski-grad",
+      "name": "Студентски град"
+    },
+    {
+      "slug": "suhata-reka",
+      "name": "Сухата река"
+    },
+    {
+      "slug": "suhodol",
+      "name": "Суходол"
+    },
+    {
+      "slug": "tolstoy",
+      "name": "Толстой"
+    },
+    {
+      "slug": "trebich",
+      "name": "Требич"
+    },
+    {
+      "slug": "triagalnika",
+      "name": "Триъгълника"
+    },
+    {
+      "slug": "fakulteta",
+      "name": "Факултета"
+    },
+    {
+      "slug": "filipovtsi",
+      "name": "Филиповци"
+    },
+    {
+      "slug": "fondovi-zhilishta",
+      "name": "Фондови жилища"
+    },
+    {
+      "slug": "hadzhi-dimitar",
+      "name": "Хаджи Димитър"
+    },
+    {
+      "slug": "hipodruma",
+      "name": "Хиподрума"
+    },
+    {
+      "slug": "hladilnika",
+      "name": "Хладилника"
+    },
+    {
+      "slug": "hristo-botev",
+      "name": "Христо Ботев"
+    },
+    {
+      "slug": "tsentar",
+      "name": "Център"
+    },
+    {
+      "slug": "chelopechene",
+      "name": "Челопечене"
+    },
+    {
+      "slug": "yavorov",
+      "name": "Яворов"
+    },
+    {
+      "slug": "v-z-amerikanski-kolezh",
+      "name": "в.з.Американски колеж"
+    },
+    {
+      "slug": "v-z-belovodski-pat",
+      "name": "в.з.Беловодски път"
+    },
+    {
+      "slug": "v-z-boyana",
+      "name": "в.з.Бояна"
+    },
+    {
+      "slug": "v-z-bunkera",
+      "name": "в.з.Бункера"
+    },
+    {
+      "slug": "v-z-vrana-german",
+      "name": "в.з.Врана - Герман"
+    },
+    {
+      "slug": "v-z-vrana-lozen",
+      "name": "в.з.Врана - Лозен"
+    },
+    {
+      "slug": "v-z-gorna-banya",
+      "name": "в.з.Горна баня"
+    },
+    {
+      "slug": "v-z-kiliite",
+      "name": "в.з.Килиите"
+    },
+    {
+      "slug": "v-z-kinotsentara",
+      "name": "в.з.Киноцентъра"
+    },
+    {
+      "slug": "v-z-kinotsentara-3-chast",
+      "name": "в.з.Киноцентъра 3 част"
+    },
+    {
+      "slug": "v-z-lyulin",
+      "name": "в.з.Люлин"
+    },
+    {
+      "slug": "v-z-malinova-dolina",
+      "name": "в.з.Малинова долина"
+    },
+    {
+      "slug": "v-z-malinova-dolina-gerena",
+      "name": "в.з.Малинова долина - Герена"
+    },
+    {
+      "slug": "v-z-simeonovo-dragalevtsi",
+      "name": "в.з.Симеоново - Драгалевци"
+    },
+    {
+      "slug": "v-z-cherniya-kos",
+      "name": "в.з.Черния кос"
+    },
+    {
+      "slug": "gr-bankya",
+      "name": "гр. Банкя"
+    },
+    {
+      "slug": "gr-buhovo",
+      "name": "гр. Бухово"
+    },
+    {
+      "slug": "gr-novi-iskar",
+      "name": "гр. Нови Искър"
+    },
+    {
+      "slug": "zh-gr-zoopark",
+      "name": "ж.гр.Зоопарк"
+    },
+    {
+      "slug": "zh-gr-yuzhen-park",
+      "name": "ж.гр.Южен парк"
+    },
+    {
+      "slug": "m-t-barite",
+      "name": "м-т Барите"
+    },
+    {
+      "slug": "m-t-gardova-glava",
+      "name": "м-т Гърдова глава"
+    },
+    {
+      "slug": "m-t-detski-grad",
+      "name": "м-т Детски град"
+    },
+    {
+      "slug": "m-t-kambanite",
+      "name": "м-т Камбаните"
+    },
+    {
+      "slug": "m-t-kinotsentara",
+      "name": "м-т Киноцентъра"
+    },
+    {
+      "slug": "m-t-mala-koriya",
+      "name": "м-т Мала кория"
+    },
+    {
+      "slug": "m-t-shtarkelovo-gnezdo",
+      "name": "м-т Щъркелово гнездо"
+    },
+    {
+      "slug": "m-t-yaz-iskar",
+      "name": "м-т яз. Искър"
+    },
+    {
+      "slug": "s-balsha",
+      "name": "с. Балша"
+    },
+    {
+      "slug": "s-bistritsa",
+      "name": "с. Бистрица"
+    },
+    {
+      "slug": "s-busmantsi",
+      "name": "с. Бусманци"
+    },
+    {
+      "slug": "s-vladaya",
+      "name": "с. Владая"
+    },
+    {
+      "slug": "s-voynegovtsi",
+      "name": "с. Войнеговци"
+    },
+    {
+      "slug": "s-voluyak",
+      "name": "с. Волуяк"
+    },
+    {
+      "slug": "s-german",
+      "name": "с. Герман"
+    },
+    {
+      "slug": "s-gorni-bogrov",
+      "name": "с. Горни Богров"
+    },
+    {
+      "slug": "s-dobroslavtsi",
+      "name": "с. Доброславци"
+    },
+    {
+      "slug": "s-dolni-bogrov",
+      "name": "с. Долни Богров"
+    },
+    {
+      "slug": "s-dolni-pasarel",
+      "name": "с. Долни Пасарел"
+    },
+    {
+      "slug": "s-zheleznitsa",
+      "name": "с. Железница"
+    },
+    {
+      "slug": "s-zhelyava",
+      "name": "с. Желява"
+    },
+    {
+      "slug": "s-zhiten",
+      "name": "с. Житен"
+    },
+    {
+      "slug": "s-ivanyane",
+      "name": "с. Иваняне"
+    },
+    {
+      "slug": "s-kazichene",
+      "name": "с. Казичене"
+    },
+    {
+      "slug": "s-klisura",
+      "name": "с. Клисура"
+    },
+    {
+      "slug": "s-kokalyane",
+      "name": "с. Кокаляне"
+    },
+    {
+      "slug": "s-krivina",
+      "name": "с. Кривина"
+    },
+    {
+      "slug": "s-kubratovo",
+      "name": "с. Кубратово"
+    },
+    {
+      "slug": "s-katina",
+      "name": "с. Кътина"
+    },
+    {
+      "slug": "s-lozen",
+      "name": "с. Лозен"
+    },
+    {
+      "slug": "s-lokorsko",
+      "name": "с. Локорско"
+    },
+    {
+      "slug": "s-malo-buchino",
+      "name": "с. Мало Бучино"
+    },
+    {
+      "slug": "s-mirovyane",
+      "name": "с. Мировяне"
+    },
+    {
+      "slug": "s-mramor",
+      "name": "с. Мрамор"
+    },
+    {
+      "slug": "s-marchaevo",
+      "name": "с. Мърчаево"
+    },
+    {
+      "slug": "s-negovan",
+      "name": "с. Негован"
+    },
+    {
+      "slug": "s-pancharevo",
+      "name": "с. Панчарево"
+    },
+    {
+      "slug": "s-plana",
+      "name": "с. Плана"
+    },
+    {
+      "slug": "s-podgumer",
+      "name": "с. Подгумер"
+    },
+    {
+      "slug": "s-svetovrachene",
+      "name": "с. Световрачене"
+    },
+    {
+      "slug": "s-chepintsi",
+      "name": "с. Чепинци"
+    },
+    {
+      "slug": "s-yana",
+      "name": "с. Яна"
+    }
+  ],
+  "wrongSlug": [],
+  "notFound": [],
+  "zeroListings": [],
+  "other": []
+}

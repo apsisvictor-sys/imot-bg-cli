@@ -1,7 +1,9 @@
 package store
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -99,34 +101,68 @@ func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
-// generateListingHash creates a unique hash for deduplication
-func generateListingHash(l scraper.Listing) string {
-	data := fmt.Sprintf("%s|%s|%s|%d|%d|%s|%s",
-		l.Type, l.City, l.Neighborhood, l.PriceEUR, l.SizeSqM, l.Floor, l.Phone)
-	// Simple hash
-	h := uint32(2166136261)
-	for _, b := range []byte(data) {
-		h ^= uint32(b)
-		h *= 16777619
-	}
-	return fmt.Sprintf("%x", h)
+type dbExecutor interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
 }
 
-// UpsertListing inserts or updates a listing
-func (s *Store) UpsertListing(l scraper.Listing) (bool, error) {
+type priceEntry struct {
+	Date  string `json:"date"`
+	Price int    `json:"price"`
+}
+
+// generateListingHash creates a stable SHA-256 hash for deduplication.
+func generateListingHash(l scraper.Listing) string {
+	identity := l.ID
+	if identity == "" {
+		identity = l.URL
+	}
+	if identity != "" {
+		sum := sha256.Sum256([]byte(identity))
+		return fmt.Sprintf("%x", sum)
+	}
+	data := fmt.Sprintf("%s|%s|%s|%d|%d|%s|%s",
+		l.Type, l.City, l.Neighborhood, l.PriceEUR, l.SizeSqM, l.Floor, l.Phone)
+	sum := sha256.Sum256([]byte(data))
+	return fmt.Sprintf("%x", sum)
+}
+
+func appendPriceHistory(raw sql.NullString, scrapedAt string, price int) (string, error) {
+	entries := []priceEntry{}
+	if raw.Valid && strings.TrimSpace(raw.String) != "" {
+		if err := json.Unmarshal([]byte(raw.String), &entries); err != nil {
+			return "", fmt.Errorf("parsing price history: %w", err)
+		}
+	}
+	entries = append(entries, priceEntry{Date: scrapedAt, Price: price})
+	buf, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("encoding price history: %w", err)
+	}
+	return string(buf), nil
+}
+
+func upsertListing(exec dbExecutor, l scraper.Listing) (bool, error) {
 	hash := generateListingHash(l)
 
-	// Check if exists
+	// Check if exists by canonical hash, with URL fallback for old local DB rows.
+	var existingHash string
 	var existingPrice int
 	var priceHistory sql.NullString
-	err := s.db.QueryRow(
-		"SELECT price_eur, price_history FROM listings WHERE listing_hash = ?",
+	err := exec.QueryRow(
+		"SELECT listing_hash, price_eur, price_history FROM listings WHERE listing_hash = ?",
 		hash,
-	).Scan(&existingPrice, &priceHistory)
+	).Scan(&existingHash, &existingPrice, &priceHistory)
+	if err == sql.ErrNoRows && l.URL != "" {
+		err = exec.QueryRow(
+			"SELECT listing_hash, price_eur, price_history FROM listings WHERE url = ?",
+			l.URL,
+		).Scan(&existingHash, &existingPrice, &priceHistory)
+	}
 
 	if err == sql.ErrNoRows {
 		// Insert new
-		_, err := s.db.Exec(`
+		_, err := exec.Exec(`
 			INSERT INTO listings (listing_hash, type, city, neighborhood, price_eur, price_bgn,
 				size_sqm, floor, year_built, description, phone, agency, url)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -142,23 +178,19 @@ func (s *Store) UpsertListing(l scraper.Listing) (bool, error) {
 		return false, fmt.Errorf("checking existing: %w", err)
 	}
 
-	// Update last_seen_at
-	_, err = s.db.Exec("UPDATE listings SET last_seen_at = CURRENT_TIMESTAMP WHERE listing_hash = ?", hash)
+	// Update last_seen_at and migrate old local hashes to the canonical hash.
+	_, err = exec.Exec("UPDATE listings SET listing_hash = ?, last_seen_at = CURRENT_TIMESTAMP WHERE listing_hash = ?", hash, existingHash)
 	if err != nil {
 		return false, fmt.Errorf("updating last_seen: %w", err)
 	}
 
-	// If price changed, update price history
+	// If price changed, update price history.
 	if existingPrice != l.PriceEUR {
-		var newHistory string
-		if priceHistory.Valid && priceHistory.String != "" {
-			newHistory = fmt.Sprintf(`%s,{"date":"%s","price":%d}`,
-				strings.TrimSuffix(priceHistory.String, "]"),
-				l.ScrapedAt, l.PriceEUR)
-		} else {
-			newHistory = fmt.Sprintf(`[{"date":"%s","price":%d}]`, l.ScrapedAt, l.PriceEUR)
+		newHistory, err := appendPriceHistory(priceHistory, l.ScrapedAt, l.PriceEUR)
+		if err != nil {
+			return false, err
 		}
-		_, err = s.db.Exec(`
+		_, err = exec.Exec(`
 			UPDATE listings SET price_eur = ?, price_bgn = ?, price_history = ?,
 				last_seen_at = CURRENT_TIMESTAMP WHERE listing_hash = ?`,
 			l.PriceEUR, l.PriceBGN, newHistory, hash)
@@ -170,13 +202,50 @@ func (s *Store) UpsertListing(l scraper.Listing) (bool, error) {
 	return false, nil
 }
 
-// InsertSyncLog records a sync operation
-func (s *Store) InsertSyncLog(city, propType string, pagesScraped, listingsFound, newListings int) error {
-	_, err := s.db.Exec(`
+// UpsertListing inserts or updates a listing.
+func (s *Store) UpsertListing(l scraper.Listing) (bool, error) {
+	return upsertListing(s.db, l)
+}
+
+// SyncListings atomically upserts listings and records sync metadata.
+func (s *Store) SyncListings(city, propType string, pagesScraped int, listings []scraper.Listing) (int, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("beginning sync transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	newCount := 0
+	for _, l := range listings {
+		isNew, err := upsertListing(tx, l)
+		if err != nil {
+			return 0, err
+		}
+		if isNew {
+			newCount++
+		}
+	}
+
+	if err := insertSyncLog(tx, city, propType, pagesScraped, len(listings), newCount); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("committing sync transaction: %w", err)
+	}
+	return newCount, nil
+}
+
+func insertSyncLog(exec dbExecutor, city, propType string, pagesScraped, listingsFound, newListings int) error {
+	_, err := exec.Exec(`
 		INSERT INTO sync_log (city, property_type, pages_scraped, listings_found, new_listings)
 		VALUES (?, ?, ?, ?, ?)`,
 		city, propType, pagesScraped, listingsFound, newListings)
 	return err
+}
+
+// InsertSyncLog records a sync operation.
+func (s *Store) InsertSyncLog(city, propType string, pagesScraped, listingsFound, newListings int) error {
+	return insertSyncLog(s.db, city, propType, pagesScraped, listingsFound, newListings)
 }
 
 // QueryListings queries listings with filters
@@ -237,12 +306,12 @@ func (s *Store) QueryListings(city, propType, neighborhood string, minPrice, max
 
 // Stats holds price statistics
 type Stats struct {
-	Count         int
-	AvgPrice      float64
-	MedianPrice   float64
+	Count          int
+	AvgPrice       float64
+	MedianPrice    float64
 	AvgPricePerSqm float64
-	MinPrice      int
-	MaxPrice      int
+	MinPrice       int
+	MaxPrice       int
 	ByNeighborhood map[string]NeighborhoodStats
 }
 
