@@ -2,7 +2,9 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -87,6 +89,7 @@ func newSearchCmd() *cobra.Command {
 	}
 	addSearchFlags(cmd)
 	addFullFlag(cmd)
+	cmd.Flags().String("file", "", "Parse a saved search-results HTML file instead of fetching live (use - for stdin)")
 	return cmd
 }
 
@@ -158,17 +161,45 @@ func newCitiesCmd() *cobra.Command {
 
 func newDetailCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "detail <url>",
-		Short: "Fetch full details for a single listing",
-		Long:  "Fetches a listing's detail page from imot.bg and extracts enriched data: full description, floor, year, heating, construction type, all phones, agency URL.",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runDetail,
+		Use:   "detail [url]",
+		Short: "Fetch or parse one listing's detail page",
+		Long: "Fetches a listing's detail page from imot.bg and extracts enriched data: full description, floor, year, heating, construction type, all phones, agency URL, photos, features and broker contact.\n\n" +
+			"With --file it parses a saved page instead and makes no network request. The saved page is " +
+			"validated exactly like a live one: it must be a genuine advert page and must carry its own " +
+			"advert identity. A challenge page, a removal notice, an unreadable page or a page with " +
+			"absent/wrong advert identity exits non-zero and prints typed error metadata as JSON.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: runDetail,
 	}
 	cmd.Flags().BoolVar(&flagJSON, "json", true, "JSON output (default true)")
+	cmd.Flags().String("file", "", "Parse a saved detail-page HTML file instead of fetching live (use - for stdin)")
+	cmd.Flags().String("expect-url", "", "Listing URL the saved page is expected to contain; verifies advert identity (only with --file)")
 	return cmd
 }
 
 func runDetail(cmd *cobra.Command, args []string) error {
+	filePath, err := cmd.Flags().GetString("file")
+	if err != nil {
+		return err
+	}
+	expectURL, err := cmd.Flags().GetString("expect-url")
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case filePath != "" && len(args) > 0:
+		return fmt.Errorf("pass either a listing URL or --file, not both")
+	case filePath == "" && len(args) == 0:
+		return fmt.Errorf("provide a listing URL, or --file <path> to parse a saved page")
+	case filePath == "" && expectURL != "":
+		return fmt.Errorf("--expect-url is only meaningful with --file; a live URL is already its own expectation")
+	}
+
+	if filePath != "" {
+		return runDetailFromFile(filePath, expectURL)
+	}
+
 	url := args[0]
 	if !strings.HasPrefix(url, "https://www.imot.bg/obiava-") {
 		return fmt.Errorf("URL must be an imot.bg listing URL (e.g. https://www.imot.bg/obiava-...)")
@@ -177,13 +208,56 @@ func runDetail(cmd *cobra.Command, args []string) error {
 	client := scraper.NewClient()
 	detail, err := client.FetchDetail(url)
 	if err != nil {
-		return fmt.Errorf("fetching detail: %w", err)
+		return emitDetailError(err)
+	}
+	return encodeDetail(detail)
+}
+
+// runDetailFromFile parses a saved page through exactly the same validation as
+// the live path, so a fixture proves the real contract. It makes no network
+// request. expectedURL may be empty, in which case the page is still required to
+// carry its own advert identity but no identity comparison is made.
+func runDetailFromFile(filePath, expectedURL string) error {
+	if expectedURL != "" && (!strings.HasPrefix(expectedURL, "https://www.imot.bg/obiava-") || scraper.AdvertIDFromURL(expectedURL) == "") {
+		return fmt.Errorf("--expect-url must be an imot.bg listing URL carrying a 15-digit advert number (e.g. https://www.imot.bg/obiava-...)")
 	}
 
+	raw, err := readLocalPage(filePath)
+	if err != nil {
+		return err
+	}
+
+	detail, err := scraper.ParseDetailPage(scraper.DecodeHTMLBytes(raw), expectedURL)
+	if err != nil {
+		return emitDetailError(err)
+	}
+	return encodeDetail(detail)
+}
+
+// encodeDetail writes the unchanged detail payload on the JSON stream.
+func encodeDetail(detail scraper.DetailListing) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	return enc.Encode(detail)
+}
+
+// emitDetailError prints a typed *DetailError's metadata as JSON on stdout —
+// the same stream success uses — and returns it so the process exits non-zero.
+// A consumer therefore can never read a challenge, removed or wrong-identity
+// page as a successful advert with empty fields.
+func emitDetailError(err error) error {
+	var detailErr *scraper.DetailError
+	if errors.As(err, &detailErr) {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		if encErr := enc.Encode(detailErr); encErr != nil {
+			return fmt.Errorf("%w (and printing error metadata failed: %v)", detailErr, encErr)
+		}
+		return detailErr
+	}
+	return err
 }
 
 func resolveCity(city string) string {
@@ -198,6 +272,14 @@ func resolveCity(city string) string {
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
+	filePath, err := cmd.Flags().GetString("file")
+	if err != nil {
+		return err
+	}
+	if filePath != "" {
+		return runSearchFromFile(filePath)
+	}
+
 	if flagCity == "" {
 		return fmt.Errorf("--city is required")
 	}
@@ -225,15 +307,6 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	result.Listings = dedupListings(result.Listings)
 	result.Listings = filterListings(result.Listings, params, flagNeighborhood != "")
 
-	// A partial result must keep listings as an array, never null: consumers read
-	// a null/absent array with total_count 0 as "verified empty", which is the
-	// exact misreading an unreadable page must not allow. The envelope types
-	// listings as an array even when the scrape or the client-side filter emptied
-	// the set; empty_verified and partial carry the meaning.
-	if result.Listings == nil {
-		result.Listings = []scraper.Listing{}
-	}
-
 	if flagFull && flagQuiet {
 		return fmt.Errorf("choose either --full or --quiet, not both")
 	}
@@ -260,15 +333,31 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	return emitSearchResult(result)
+}
+
+// emitSearchResult renders a search result through the existing output paths. It
+// is shared by the live scrape and the offline --file parse, so the two cannot
+// drift in JSON shape.
+func emitSearchResult(result scraper.SearchResult) error {
+	// A partial result must keep listings as an array, never null: consumers read
+	// a null/absent array with total_count 0 as "verified empty", which is the
+	// exact misreading an unreadable page must not allow. The envelope types
+	// listings as an array even when the scrape or the client-side filter emptied
+	// the set; empty_verified and partial carry the meaning.
+	if result.Listings == nil {
+		result.Listings = []scraper.Listing{}
+	}
+
 	stats := scraper.ComputeStats(result.Listings)
 
 	if flagJSON && flagQuiet {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetEscapeHTML(false)
 		return enc.Encode(scraper.QuietResult{
-			RequestedCity:         flagCity,
-			RequestedNeighborhood: flagNeighborhood,
-			RequestedType:         flagType,
+			RequestedCity:         result.RequestedCity,
+			RequestedNeighborhood: result.RequestedNeighborhood,
+			RequestedType:         result.RequestedType,
 			Rent:                  flagRent,
 			TotalCount:            result.TotalCount,
 			PagesFetched:          result.PagesFetched,
@@ -296,6 +385,97 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return enc.Encode(result)
 	}
 	return outputListings(result.Listings)
+}
+
+// runSearchFromFile parses a saved search-results page with no network access.
+// Node fixture tests use it to prove the parser offline against saved, correctly
+// decoded HTML, including one search page per type slug. It accepts --with-meta
+// and --quiet, but not --full or --pages: those describe a live fetch.
+func runSearchFromFile(filePath string) error {
+	if flagFull {
+		return fmt.Errorf("--full enriches listings from live detail pages; it cannot be used with --file")
+	}
+	if flagPages != 0 {
+		return fmt.Errorf("--pages has no meaning with --file; a saved page is parsed as-is")
+	}
+
+	raw, err := readLocalPage(filePath)
+	if err != nil {
+		return err
+	}
+
+	city := ""
+	if flagCity != "" {
+		city = resolveCity(flagCity)
+	}
+	params := scraper.SearchParams{
+		City:         city,
+		Type:         flagType,
+		MinPrice:     flagMinPrice,
+		MaxPrice:     flagMaxPrice,
+		MinSqM:       flagMinSqM,
+		MaxSqM:       flagMaxSqM,
+		Neighborhood: flagNeighborhood,
+		Rent:         flagRent,
+	}
+
+	result := scraper.ParseSearchPage(scraper.DecodeHTMLBytes(raw), filePath)
+	result.RequestedCity = city
+	result.RequestedNeighborhood = flagNeighborhood
+	result.RequestedType = flagType
+
+	result.Listings = dedupListings(result.Listings)
+	// No neighborhood slug is resolved offline, so the neighborhood filter stays
+	// client-side here even though a live search can narrow it at the source.
+	result.Listings = filterListings(result.Listings, params, false)
+	result.ClientFilters = offlineClientFilters(params)
+
+	return emitSearchResult(result)
+}
+
+// offlineClientFilters names the filters an offline parse applied to the rows it
+// read. ServerFilters stays empty: no source query was made.
+func offlineClientFilters(params scraper.SearchParams) []string {
+	filters := []string{}
+	if params.MinPrice > 0 {
+		filters = append(filters, "min_price")
+	}
+	if params.MaxPrice > 0 {
+		filters = append(filters, "max_price")
+	}
+	if params.MinSqM > 0 {
+		filters = append(filters, "min_sqm")
+	}
+	if params.MaxSqM > 0 {
+		filters = append(filters, "max_sqm")
+	}
+	if params.Neighborhood != "" {
+		filters = append(filters, "neighborhood")
+	}
+	return filters
+}
+
+// readLocalPage reads a saved HTML page from a path, or from stdin when the path
+// is "-", and rejects an empty input so a missing fixture fails loudly instead
+// of parsing as an unreadable page.
+func readLocalPage(filePath string) ([]byte, error) {
+	var raw []byte
+	var err error
+	if filePath == "-" {
+		raw, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("reading stdin: %w", err)
+		}
+	} else {
+		raw, err = os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", filePath, err)
+		}
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		return nil, fmt.Errorf("%s is empty; an offline parse needs saved page HTML", filePath)
+	}
+	return raw, nil
 }
 
 func runSync(cmd *cobra.Command, args []string) error {

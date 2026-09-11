@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -25,6 +26,55 @@ const (
 // 200 but carries no evidence of being a search result page. Its text is what
 // SearchError.Error holds when SearchError.Kind is SearchErrorUnreadablePage.
 var ErrUnreadablePage = errors.New("search page unreadable: no listing cards, no total count, and no explicit no-results marker")
+
+// Detail page failure kinds carried in DetailError.Kind. A caller branches on
+// the kind instead of the error text, the same way search failures are read.
+const (
+	// DetailErrorFetchFailed: the detail request failed (non-200 or network
+	// error). A 404 is a fetch failure with HTTPStatus 404.
+	DetailErrorFetchFailed = "fetch_failed"
+	// DetailErrorChallengePage: the page is a bot/captcha interstitial, not an
+	// advert. It must never be read as an advert with empty fields.
+	DetailErrorChallengePage = "challenge_page"
+	// DetailErrorRemovedAdvert: HTTP 200 carried an explicit removed/not-found
+	// notice instead of the advert.
+	DetailErrorRemovedAdvert = "removed_advert"
+	// DetailErrorUnreadablePage: HTTP 200 carried no advert structure and no
+	// recognizable challenge or removal notice (changed layout, block page).
+	DetailErrorUnreadablePage = "unreadable_page"
+	// DetailErrorMissingIdentity: the page is advert-shaped but exposes no
+	// canonical advert identity of its own. The requested URL is NOT substituted:
+	// unknown identity stays unknown.
+	DetailErrorMissingIdentity = "missing_identity"
+	// DetailErrorWrongIdentity: the page exposes a canonical advert identity that
+	// names a different advertisement than the one requested.
+	DetailErrorWrongIdentity = "wrong_identity"
+)
+
+// DetailError is the typed failure returned when a fetched or locally parsed
+// detail page is not an acceptable advert page for the requested advert. Every
+// field is additive metadata: the success payload keeps its original shape.
+//
+// HTTPStatus is populated for DetailErrorFetchFailed when the source answered a
+// non-200 status, so a caller can treat a verified 404 differently from a 403 or
+// a timeout without parsing error strings.
+type DetailError struct {
+	Kind              string `json:"kind"`
+	RequestedURL      string `json:"requested_url,omitempty"`
+	RequestedAdvertID string `json:"requested_advert_id,omitempty"`
+	ObservedURL       string `json:"observed_url,omitempty"`
+	ObservedAdvertID  string `json:"observed_advert_id,omitempty"`
+	HTTPStatus        int    `json:"http_status,omitempty"`
+	Message           string `json:"error"`
+}
+
+// Error keeps the kind in the text so logs and wrapped messages stay legible.
+func (e *DetailError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s: %s", e.Kind, e.Message)
+}
 
 // DetailListing holds the enriched data extracted from a listing's detail page.
 // Search-page fields (ID, Type, City, Neighborhood, PriceEUR, PriceBGN, SizeSqM)
@@ -242,13 +292,13 @@ var TypeMap = map[string]string{
 	"магазин":    "magazin",
 	"заведение":  "zavedenie",
 	"склад":      "sklad",
-	"гараж":                "garazh-parkomyasto",
-	"ателие":               "atelie-tavan",
-	"парцел":               "partsel",
+	"гараж":      "garazh-parkomyasto",
+	"ателие":     "atelie-tavan",
+	"парцел":     "partsel",
 	"промишлено помещение": "promishleno-pomeshtenie",
-	"хотел":                "hotel",
-	"бизнес имот":          "biznes-imot",
-	"етаж от къща":         "etazh-ot-kashta",
+	"хотел":        "hotel",
+	"бизнес имот":  "biznes-imot",
+	"етаж от къща": "etazh-ot-kashta",
 	// Retained for compatibility, but the city page does not advertise this
 	// slug and it must not be used as a completeness partition.
 	"земя": "zemedelska-zemya",

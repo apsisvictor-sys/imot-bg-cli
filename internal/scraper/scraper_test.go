@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -74,12 +75,12 @@ func TestSearchWithMetaIncludesResolvedNeighborhoodSlug(t *testing.T) {
 
 func TestTypeMapIncludesSourceBackedCityTypes(t *testing.T) {
 	expected := map[string]string{
-		"ателие":               "atelie-tavan",
-		"парцел":               "partsel",
+		"ателие": "atelie-tavan",
+		"парцел": "partsel",
 		"промишлено помещение": "promishleno-pomeshtenie",
-		"хотел":                "hotel",
-		"бизнес имот":          "biznes-imot",
-		"етаж от къща":         "etazh-ot-kashta",
+		"хотел":        "hotel",
+		"бизнес имот":  "biznes-imot",
+		"етаж от къща": "etazh-ot-kashta",
 	}
 	for name, slug := range expected {
 		if got := TypeMap[name]; got != slug {
@@ -94,5 +95,95 @@ func TestTypeMapIncludesSourceBackedCityTypes(t *testing.T) {
 func TestParseTotalCount(t *testing.T) {
 	if got := ParseTotalCount("показани 1-40 от общо 1 354 обяви"); got != 1354 {
 		t.Fatalf("expected 1354, got %d", got)
+	}
+}
+
+func clientReturning(body string, status int) *Client {
+	return &Client{httpClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return htmlResponse(status, body), nil
+	})}}
+}
+
+func TestFetchDetailNowRejectsChallengePage(t *testing.T) {
+	client := clientReturning(`<title>Just a moment...</title><div id="cf-chl-widget">Checking your browser before accessing www.imot.bg.</div>`, http.StatusOK)
+
+	_, err := client.fetchDetailNow(legitDetailURL)
+	var de *DetailError
+	if !errors.As(err, &de) {
+		t.Fatalf("expected *DetailError, got %T: %v", err, err)
+	}
+	if de.Kind != DetailErrorChallengePage {
+		t.Fatalf("kind = %q, want %q", de.Kind, DetailErrorChallengePage)
+	}
+	if de.RequestedAdvertID != "177425523801314" {
+		t.Errorf("requested_advert_id = %q", de.RequestedAdvertID)
+	}
+}
+
+// A page that carries its own advert structure but no canonical advert identity
+// must fail with missing_identity. The old behaviour substituted the requested
+// URL, which turned an unknown identity into a confident-looking detail.
+func TestFetchDetailNowRejectsMissingIdentityWithoutSubstitutingRequestedURL(t *testing.T) {
+	client := clientReturning(`<div class="text">Обява без каноничен адрес в страницата.</div><div class="phone">тел.: 0888 123 456</div>`, http.StatusOK)
+
+	detail, err := client.fetchDetailNow(legitDetailURL)
+	var de *DetailError
+	if !errors.As(err, &de) {
+		t.Fatalf("expected *DetailError, got %T: %v", err, err)
+	}
+	if de.Kind != DetailErrorMissingIdentity {
+		t.Fatalf("kind = %q, want %q", de.Kind, DetailErrorMissingIdentity)
+	}
+	if de.ObservedAdvertID != "" {
+		t.Errorf("observed_advert_id = %q, want empty", de.ObservedAdvertID)
+	}
+	if detail.URL == legitDetailURL {
+		t.Errorf("detail.URL must stay empty, got the substituted requested URL %q", detail.URL)
+	}
+}
+
+func TestFetchDetailNowRejectsWrongIdentity(t *testing.T) {
+	body := `<meta property="og:url" content="` + otherDetailURL + `"><div class="text">Тристаен апартамент в Младост 1, с южно изложение.</div><div class="adParams">Площ: 95 кв.м, Етаж: 6-ти от 8</div>`
+	client := clientReturning(body, http.StatusOK)
+
+	_, err := client.fetchDetailNow(legitDetailURL)
+	var de *DetailError
+	if !errors.As(err, &de) {
+		t.Fatalf("expected *DetailError, got %T: %v", err, err)
+	}
+	if de.Kind != DetailErrorWrongIdentity {
+		t.Fatalf("kind = %q, want %q", de.Kind, DetailErrorWrongIdentity)
+	}
+}
+
+func TestFetchDetailNowReportsHTTPStatusForRemovedAdvert(t *testing.T) {
+	client := clientReturning("not found", http.StatusNotFound)
+
+	_, err := client.fetchDetailNow(legitDetailURL)
+	var de *DetailError
+	if !errors.As(err, &de) {
+		t.Fatalf("expected *DetailError, got %T: %v", err, err)
+	}
+	if de.Kind != DetailErrorFetchFailed {
+		t.Fatalf("kind = %q, want %q", de.Kind, DetailErrorFetchFailed)
+	}
+	if de.HTTPStatus != http.StatusNotFound {
+		t.Errorf("http_status = %d, want 404", de.HTTPStatus)
+	}
+}
+
+func TestFetchDetailNowAcceptsLegitimateAdvert(t *testing.T) {
+	body := `<meta property="og:url" content="` + legitDetailURL + `"><div class="text">Просторен двустаен апартамент в кв. Лозенец.</div><div class="adParams">Площ: 72 кв.м, Етаж: 4-ти от 7</div>`
+	client := clientReturning(body, http.StatusOK)
+
+	detail, err := client.fetchDetailNow(legitDetailURL)
+	if err != nil {
+		t.Fatalf("legitimate advert rejected: %v", err)
+	}
+	if detail.URL != legitDetailURL {
+		t.Errorf("url = %q, want %q", detail.URL, legitDetailURL)
+	}
+	if !strings.Contains(detail.FullDescription, "Лозенец") {
+		t.Errorf("full_description = %q", detail.FullDescription)
 	}
 }

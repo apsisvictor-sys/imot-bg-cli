@@ -155,12 +155,12 @@ func TestToSlimListingsProjection(t *testing.T) {
 
 func TestFetchDetailsConcurrentEnrichesAllListings(t *testing.T) {
 	detailHTML := func(id string) string {
-		return `<meta property="og:url" content="https://www.imot.bg/obiava-` + id + `"><div class="text">Описание ` + id + `</div>`
+		return `<meta property="og:url" content="https://www.imot.bg/` + id + `"><div class="text">Описание ` + id + `</div>`
 	}
 	listings := []Listing{
-		{ID: "a1", URL: "https://www.imot.bg/obiava-a1"},
-		{ID: "b2", URL: "https://www.imot.bg/obiava-b2"},
-		{ID: "c3", URL: "https://www.imot.bg/obiava-c3"},
+		{ID: "1a177425523801314", URL: "https://www.imot.bg/obiava-1a177425523801314"},
+		{ID: "1b177425523801315", URL: "https://www.imot.bg/obiava-1b177425523801315"},
+		{ID: "1c177425523801316", URL: "https://www.imot.bg/obiava-1c177425523801316"},
 	}
 	client := &Client{httpClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		id := path.Base(req.URL.Path)

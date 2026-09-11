@@ -52,6 +52,16 @@ var (
 	reVatNote           = regexp.MustCompile(`Не се начислява ДДС`)
 	reImotPhotoURL      = regexp.MustCompile(`(?i)(?:(?:https?:)?//)?[^"'\s<>]*focus\.bg/imot/photosimotbg/[^"'\s<>]+\.jpg`)
 	reParterDetail      = regexp.MustCompile(`(?i)партер`)
+
+	// Detail page identity and page-kind evidence. adParams is a separate
+	// container class from params, so it needs its own pattern; the search-page
+	// regexes cannot be reused because their anchors are different.
+	reAdvertNumber  = regexp.MustCompile(`(\d{15})`)
+	reCanonicalTag  = regexp.MustCompile(`(?is)<link[^>]*\brel=["']?canonical["']?[^>]*>`)
+	reHrefAttr      = regexp.MustCompile(`(?is)\bhref=["']([^"']+)["']`)
+	reAdParams      = regexp.MustCompile(`class="adParams"`)
+	reChallengePage = regexp.MustCompile(`(?i)(cf-chl|__cf_chl|challenge-platform|cf_chl_opt|cf_chl_tk|just a moment|checking your browser|enable javascript and cookies|attention required|g-recaptcha|hcaptcha|recaptcha/api|достъпът е ограничен)`)
+	reRemovedNotice = regexp.MustCompile(`(?i)(обявата не е намерена|обявата е изтрита|обявата е премахната|обявата е свалена|не съществува такава обява)`)
 )
 
 // ParseListings extracts listings from HTML
@@ -518,6 +528,200 @@ func HasNoResultsMarker(html string) bool {
 	return reNoResults.MatchString(html)
 }
 
+// ParseSearchPage builds a SearchResult from one saved search-results page with
+// no network access. It is the offline twin of the page-1 path in SearchWithMeta
+// and applies the same readability rule: no cards, no total count and no
+// explicit no-results marker means Partial with an unreadable_page error, never
+// a verified empty market.
+//
+// source is recorded on the error entry so a fixture test can name the file it
+// parsed. ServerFilters stays empty because no source query was made; the caller
+// fills Requested* and the client-side filter names it actually applied.
+func ParseSearchPage(html, source string) SearchResult {
+	result := SearchResult{
+		Listings:            []Listing{},
+		PagesFetched:        1,
+		PagesPlanned:        1,
+		ServerFilters:       []string{},
+		ClientFilters:       []string{},
+		ServerFilterSupport: ServerFilterSupport(),
+	}
+
+	result.Listings = append(result.Listings, ParseListings(html)...)
+	result.TotalCount = ParseTotalCount(html)
+	noResultsMarker := HasNoResultsMarker(html)
+
+	if len(result.Listings) == 0 && result.TotalCount == 0 && !noResultsMarker {
+		result.Partial = true
+		result.PagesFetched = 0
+		result.Errors = append(result.Errors, SearchError{
+			Page:  1,
+			URL:   source,
+			Kind:  SearchErrorUnreadablePage,
+			Error: ErrUnreadablePage.Error(),
+		})
+		return result
+	}
+
+	if noResultsMarker && len(result.Listings) == 0 && result.TotalCount == 0 {
+		result.EmptyVerified = true
+	}
+	return result
+}
+
+// DetailPageKind classifies what a fetched or saved page actually is, judged
+// from its own content rather than from the URL that was requested.
+type DetailPageKind string
+
+const (
+	// DetailPageKindListing: the page carries imot.bg advert structure.
+	DetailPageKindListing DetailPageKind = "listing"
+	// DetailPageKindChallenge: a bot/captcha interstitial.
+	DetailPageKindChallenge DetailPageKind = "challenge"
+	// DetailPageKindRemoved: an explicit advert-removed/not-found notice.
+	DetailPageKindRemoved DetailPageKind = "removed"
+	// DetailPageKindUnreadable: none of the above (changed layout, block page).
+	DetailPageKindUnreadable DetailPageKind = "unreadable"
+)
+
+// AdvertIDFromURL returns the 15-digit advertisement number inside a URL or
+// advert id, or "" when the value carries none. The two-character kind prefix
+// imot.bg puts in `obiava-<id>-...` is a type variant of the same advertisement,
+// so the number — not the full slug — decides which property a page belongs to.
+// This matches the collector's own adNumberFrom.
+func AdvertIDFromURL(value string) string {
+	return reAdvertNumber.FindString(value)
+}
+
+// advertIdentity returns the canonical advert URL a page claims for itself and
+// the 15-digit advert number inside it. og:url wins over the canonical link, and
+// both are read from the page, so identity never depends on the requested URL.
+func advertIdentity(html string) (canonicalURL, advertID string) {
+	var candidates []string
+	if m := reDetailOGURL.FindStringSubmatch(html); len(m) > 1 {
+		candidates = append(candidates, m[1])
+	}
+	for _, tag := range reCanonicalTag.FindAllString(html, -1) {
+		if m := reHrefAttr.FindStringSubmatch(tag); len(m) > 1 {
+			candidates = append(candidates, m[1])
+		}
+	}
+	for _, c := range candidates {
+		c = strings.TrimSpace(c)
+		id := AdvertIDFromURL(c)
+		lower := strings.ToLower(c)
+		// Identity must be an imot.bg advert URL carrying a 15-digit advert
+		// number. Search URLs use "/obiavi/" (plural) and carry no such number,
+		// so they never supply identity. A relative advert URL is accepted too.
+		if id != "" && (strings.Contains(lower, "imot.bg") || strings.Contains(lower, "obiava")) {
+			return c, id
+		}
+	}
+	// No advert identity. Report the first canonical URL when one exists, so the
+	// error metadata can show what the page claimed to be.
+	if len(candidates) > 0 {
+		return strings.TrimSpace(candidates[0]), ""
+	}
+	return "", ""
+}
+
+// advertStructureHits counts independent pieces of advert-page structure.
+// class="text" is the site's generic text container, so one hit is weak
+// evidence; two hits, or one hit plus the page's own advert identity, are what
+// separate an advert from a challenge, a removal notice or a block page.
+// Photo and feature blocks are deliberately not required: an advert with no
+// photo and no feature tag is still a genuine advert.
+func advertStructureHits(html string) int {
+	hits := 0
+	if reDetailText.MatchString(html) {
+		hits++
+	}
+	if reDetailParams.MatchString(html) || reAdParams.MatchString(html) {
+		hits++
+	}
+	if reDetailPhone.MatchString(html) {
+		hits++
+	}
+	if reDetailViewCount.MatchString(html) {
+		hits++
+	}
+	if reDetailPublishedAt.MatchString(html) || reDetailCorrectedAt.MatchString(html) {
+		hits++
+	}
+	if reFeaturesBlock.MatchString(html) {
+		hits++
+	}
+	if reBrokerName.MatchString(html) {
+		hits++
+	}
+	if reDetailAgencyURL.MatchString(html) {
+		hits++
+	}
+	return hits
+}
+
+// ClassifyDetailPage reports what the HTML is, judged on its own content. The
+// advert check runs first, so a genuine advert that embeds a captcha widget for
+// its contact form is not mistaken for a challenge page.
+func ClassifyDetailPage(html string) DetailPageKind {
+	hits := advertStructureHits(html)
+	_, advertID := advertIdentity(html)
+	if hits >= 2 || (advertID != "" && hits >= 1) {
+		return DetailPageKindListing
+	}
+	if reChallengePage.MatchString(html) {
+		return DetailPageKindChallenge
+	}
+	if reRemovedNotice.MatchString(html) {
+		return DetailPageKindRemoved
+	}
+	return DetailPageKindUnreadable
+}
+
+// ParseDetailPage validates that html is a genuine imot.bg advert page and that
+// it belongs to the requested advert, then extracts the detail fields.
+//
+// requestedURL may be empty when the caller only wants the page judged on its
+// own (the offline fixture path): the page must still expose a canonical advert
+// identity of its own, but no comparison is made. The requested URL is never
+// used as a fallback for missing identity — unknown identity stays unknown —
+// and no failure is ever reported as a successful detail with empty fields.
+func ParseDetailPage(html, requestedURL string) (DetailListing, error) {
+	canonical, observedID := advertIdentity(html)
+	requestedID := AdvertIDFromURL(requestedURL)
+
+	reject := func(kind, message string) (DetailListing, error) {
+		return DetailListing{}, &DetailError{
+			Kind:              kind,
+			RequestedURL:      strings.TrimSpace(requestedURL),
+			RequestedAdvertID: requestedID,
+			ObservedURL:       canonical,
+			ObservedAdvertID:  observedID,
+			Message:           message,
+		}
+	}
+
+	switch ClassifyDetailPage(html) {
+	case DetailPageKindChallenge:
+		return reject(DetailErrorChallengePage, "detail page is a bot challenge, not a listing advert")
+	case DetailPageKindRemoved:
+		return reject(DetailErrorRemovedAdvert, "detail page reports that the advert is no longer available")
+	case DetailPageKindUnreadable:
+		return reject(DetailErrorUnreadablePage, "detail page is unreadable: no advert structure found")
+	}
+
+	if observedID == "" {
+		return reject(DetailErrorMissingIdentity, "detail page exposes no advert identity of its own")
+	}
+	if requestedID != "" && requestedID != observedID {
+		return reject(DetailErrorWrongIdentity, fmt.Sprintf("detail page belongs to advert %s, not requested %s", observedID, requestedID))
+	}
+
+	detail := ParseDetail(html)
+	detail.URL = canonical
+	return detail, nil
+}
+
 // ParseDetail extracts enriched data from a listing's detail page HTML.
 // Returns a DetailListing with fields only available on the detail page.
 func ParseDetail(html string) DetailListing {
@@ -666,10 +870,10 @@ func ParseDetail(html string) DetailListing {
 		}
 	}
 
-	// 5. URL from the page itself (canonical)
-	// Extract from og:url or canonical link if available
-	if m := reDetailOGURL.FindStringSubmatch(html); len(m) > 1 {
-		d.URL = m[1]
+	// 5. URL from the page itself (canonical). og:url wins; the canonical link is
+	// the fallback for pages that omit it.
+	if canonical, _ := advertIdentity(html); canonical != "" {
+		d.URL = canonical
 	}
 
 	// 6. Photo URLs from og:image and gallery/CDN references.

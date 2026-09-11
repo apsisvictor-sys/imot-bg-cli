@@ -1,6 +1,8 @@
 package scraper
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -9,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
@@ -50,6 +53,34 @@ func jitteredSleep(base time.Duration) {
 	time.Sleep(jitter)
 }
 
+// HTTPError is the typed error for a non-200 source response. It lets a caller
+// treat a verified 404 (the advert is gone) differently from a 403 or 429 (the
+// source refused the request) without parsing error strings.
+type HTTPError struct {
+	StatusCode int
+	URL        string
+}
+
+// Error keeps the original "HTTP <status> for <url>" wording.
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("HTTP %d for %s", e.StatusCode, e.URL)
+}
+
+// DecodeHTMLBytes converts saved page bytes to UTF-8. imot.bg serves
+// windows-1251: fixtures captured through the same path arrive as cp1251 bytes,
+// while fixtures saved after decoding are already valid UTF-8. Valid UTF-8 is
+// passed through unchanged, so the offline parse path needs no encoding flag.
+func DecodeHTMLBytes(raw []byte) string {
+	if utf8.Valid(raw) {
+		return string(raw)
+	}
+	decoded, err := io.ReadAll(transform.NewReader(bytes.NewReader(raw), charmap.Windows1251.NewDecoder()))
+	if err != nil {
+		return string(raw)
+	}
+	return string(decoded)
+}
+
 // FetchPage fetches a page from imot.bg and returns UTF-8 decoded HTML
 func (c *Client) FetchPage(pageURL string) (string, error) {
 	req, err := http.NewRequest("GET", pageURL, nil)
@@ -67,7 +98,7 @@ func (c *Client) FetchPage(pageURL string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d for %s", resp.StatusCode, pageURL)
+		return "", &HTTPError{StatusCode: resp.StatusCode, URL: pageURL}
 	}
 
 	// Decode windows-1251 to UTF-8
@@ -90,17 +121,27 @@ func (c *Client) FetchDetail(listingURL string) (DetailListing, error) {
 
 // fetchDetailNow fetches and parses a detail page without the pre-request
 // politeness sleep; the concurrent pool applies its own spacing.
+//
+// The page must prove it is an advert page and that it belongs to the requested
+// advert; a challenge page, a removal notice, an unreadable page or a page with
+// absent/wrong advert identity is returned as a typed *DetailError, never as a
+// DetailListing with substituted or empty fields.
 func (c *Client) fetchDetailNow(listingURL string) (DetailListing, error) {
 	html, err := c.FetchPage(listingURL)
 	if err != nil {
-		return DetailListing{}, fmt.Errorf("fetching detail page: %w", err)
+		fetchErr := &DetailError{
+			Kind:              DetailErrorFetchFailed,
+			RequestedURL:      listingURL,
+			RequestedAdvertID: AdvertIDFromURL(listingURL),
+			Message:           err.Error(),
+		}
+		var httpErr *HTTPError
+		if errors.As(err, &httpErr) {
+			fetchErr.HTTPStatus = httpErr.StatusCode
+		}
+		return DetailListing{}, fetchErr
 	}
-
-	detail := ParseDetail(html)
-	if detail.URL == "" {
-		detail.URL = listingURL
-	}
-	return detail, nil
+	return ParseDetailPage(html, listingURL)
 }
 
 // FetchDetailsConcurrent enriches listings with detail-page data using a
