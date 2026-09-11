@@ -242,10 +242,16 @@ var TypeMap = map[string]string{
 	"магазин":    "magazin",
 	"заведение":  "zavedenie",
 	"склад":      "sklad",
-	"гараж":      "garazh-parkomyasto",
-	"земя":       "zemedelska-zemya",
-	"парцел":     "place-za-stroezh",
-	"ателие":     "atelie-tavan",
+	"гараж":                "garazh-parkomyasto",
+	"ателие":               "atelie-tavan",
+	"парцел":               "partsel",
+	"промишлено помещение": "promishleno-pomeshtenie",
+	"хотел":                "hotel",
+	"бизнес имот":          "biznes-imot",
+	"етаж от къща":         "etazh-ot-kashta",
+	// Retained for compatibility, but the city page does not advertise this
+	// slug and it must not be used as a completeness partition.
+	"земя": "zemedelska-zemya",
 }
 
 // SearchParams holds the parameters for a search query

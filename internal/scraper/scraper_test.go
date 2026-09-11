@@ -72,9 +72,22 @@ func TestSearchWithMetaIncludesResolvedNeighborhoodSlug(t *testing.T) {
 	}
 }
 
-func TestTypeMapIncludesAtelie(t *testing.T) {
-	if TypeMap["ателие"] == "" {
-		t.Fatal("expected ателие type mapping")
+func TestTypeMapIncludesSourceBackedCityTypes(t *testing.T) {
+	expected := map[string]string{
+		"ателие":               "atelie-tavan",
+		"парцел":               "partsel",
+		"промишлено помещение": "promishleno-pomeshtenie",
+		"хотел":                "hotel",
+		"бизнес имот":          "biznes-imot",
+		"етаж от къща":         "etazh-ot-kashta",
+	}
+	for name, slug := range expected {
+		if got := TypeMap[name]; got != slug {
+			t.Errorf("TypeMap[%q] = %q, want %q", name, got, slug)
+		}
+	}
+	if _, ok := TypeMap["земя"]; !ok {
+		t.Fatal("legacy земя mapping should remain available to callers, even though it is not a completeness partition")
 	}
 }
 
