@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	reTotalCount = regexp.MustCompile(`от общо\s+([0-9 ]+)\+?\s+обяви`)
+	reTotalCount = regexp.MustCompile(`от общо\s+([0-9 ]+)(\+?)\s+обяви`)
 	// reNoResults is imot.bg's explicit zero-match marker, verified live on a
 	// genuinely empty search: <div class="SearchInfoLine"> Няма намерени обяви - Продава</div>.
 	reNoResults  = regexp.MustCompile(`Няма намерени обяви`)
@@ -76,11 +76,21 @@ var (
 	reASCIIPropertySlug  = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 )
 
-// ParseListings extracts listings from HTML
-func ParseListings(html string) []Listing {
-	var listings []Listing
+// maxUnknownTypeSamples bounds the unrecognized-type sample list so an unknown
+// card type is actionable evidence without echoing page content.
+const maxUnknownTypeSamples = 5
+
+// ScanListings reads the listing-card blocks from one result page and reports
+// both the accepted rows and the card-level integrity counts a completeness
+// decision needs. A card dropped for missing type/price/size, or carrying a
+// property type this CLI does not recognize, is evidence that coverage is not
+// exhaustive; ParseListings alone would discard that evidence with the card.
+func ScanListings(html string) CardScan {
+	var scan CardScan
 
 	blocks := strings.Split(html, `class="zaglavie"`)
+	scan.CardBlocks = len(blocks) - 1
+	seenTypes := make(map[string]bool)
 	for i := 1; i < len(blocks); i++ {
 		block := blocks[i]
 		// Limit block to reasonable size (avoid parsing into next listing)
@@ -88,7 +98,14 @@ func ParseListings(html string) []Listing {
 			block = block[:idx]
 		}
 
-		listing := parseListingBlock(block)
+		listing, typeRecognized := parseListingBlock(block)
+		if !typeRecognized && listing.Type != "" {
+			scan.UnknownTypeCards++
+			if len(scan.UnknownTypeSamples) < maxUnknownTypeSamples && !seenTypes[listing.Type] {
+				seenTypes[listing.Type] = true
+				scan.UnknownTypeSamples = append(scan.UnknownTypeSamples, listing.Type)
+			}
+		}
 		if listing.Type != "" && (listing.PriceEUR > 0 || listing.SizeSqM > 0) {
 			// Extract photo URL from full HTML using listing ID
 			if listing.ID != "" {
@@ -97,14 +114,46 @@ func ParseListings(html string) []Listing {
 					listing.PhotoURL = "https:" + m[1]
 				}
 			}
-			listings = append(listings, listing)
+			scan.Listings = append(scan.Listings, listing)
+			continue
 		}
+		scan.DroppedCards++
 	}
 
-	return listings
+	return scan
 }
 
-func parseListingBlock(block string) Listing {
+// ParseListings extracts listings from HTML. It keeps its original signature for
+// callers that only want the accepted rows; callers that need the card-level
+// integrity counts use ScanListings.
+func ParseListings(html string) []Listing {
+	return ScanListings(html).Listings
+}
+
+// absorbCardScan folds one page's card-level integrity counts into the search
+// envelope, keeping the unknown-type sample list bounded and unique.
+func (r *SearchResult) absorbCardScan(scan CardScan) {
+	r.CardBlocks += scan.CardBlocks
+	r.DroppedCards += scan.DroppedCards
+	r.UnknownTypeCards += scan.UnknownTypeCards
+	for _, sample := range scan.UnknownTypeSamples {
+		if len(r.UnknownTypeSamples) >= maxUnknownTypeSamples {
+			return
+		}
+		dup := false
+		for _, existing := range r.UnknownTypeSamples {
+			if existing == sample {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			r.UnknownTypeSamples = append(r.UnknownTypeSamples, sample)
+		}
+	}
+}
+
+func parseListingBlock(block string) (Listing, bool) {
 	l := Listing{
 		ScrapedAt: FormatTimestamp(time.Now()),
 	}
@@ -138,8 +187,12 @@ func parseListingBlock(block string) Listing {
 		}
 	}
 
-	// Extract type from title
-	l.Type = extractType(titleText)
+	// Extract type from title. typeRecognized is false when no known
+	// property-type keyword matched, which is the evidence a coverage decision
+	// needs: the raw fallback text is kept on the row, but it may belong to any
+	// source partition.
+	var typeRecognized bool
+	l.Type, typeRecognized = extractTypeEvidence(titleText)
 
 	// Extract prices
 	if m := rePriceEUR.FindStringSubmatch(block); len(m) > 1 {
@@ -167,10 +220,21 @@ func parseListingBlock(block string) Listing {
 		l.ID = generateHash(l)
 	}
 
-	return l
+	return l, typeRecognized
 }
 
+// extractType resolves a card title to its property type, returning the raw
+// type text when no known keyword matched.
 func extractType(title string) string {
+	propertyType, _ := extractTypeEvidence(title)
+	return propertyType
+}
+
+// extractTypeEvidence is extractType plus whether a known property-type keyword
+// produced the answer. An unrecognized title still yields its raw type text so
+// the row is not silently lost, but the false flag is the evidence a coverage
+// decision needs: an unknown card type may belong to any source partition.
+func extractTypeEvidence(title string) (string, bool) {
 	// Title looks like "Продава 1-СТАЕН", "Продава КЪЩА" or "Дава под Наем 2-СТАЕН"
 	title = strings.TrimPrefix(title, "Продава ")
 	title = strings.TrimPrefix(title, "Се отдава ")
@@ -212,7 +276,7 @@ func extractType(title string) string {
 	// 1. An exact match wins outright.
 	for _, t := range types {
 		if strings.EqualFold(typePart, t) {
-			return t
+			return t, true
 		}
 	}
 
@@ -235,11 +299,11 @@ func extractType(title string) string {
 		}
 	}
 	if best != "" {
-		return best
+		return best, true
 	}
 
 	// 3. No keyword matched at all.
-	return typePart
+	return typePart, false
 }
 
 func extractInfo(block string) string {
@@ -521,16 +585,29 @@ func parseBulgarianMonth(month string) time.Month {
 }
 
 // ParseTotalCount extracts the total number of listings from the page HTML.
-// Looks for pattern: "от общо NNN обяви"
+// Looks for pattern: "от общо NNN обяви". A missing count returns 0, so a caller
+// that must distinguish "the source reported zero" from "the source printed no
+// count" uses ParseTotalCountEvidence instead.
 func ParseTotalCount(html string) int {
+	n, _, _ := ParseTotalCountEvidence(html)
+	return n
+}
+
+// ParseTotalCountEvidence extracts the source's own total count together with
+// whether the page printed one at all and whether it printed the clamped "N+"
+// form. A coverage decision must not read "no count printed" as zero, and a
+// clamped count is a lower bound rather than the real total.
+func ParseTotalCountEvidence(html string) (count int, reported bool, capped bool) {
 	m := reTotalCount.FindStringSubmatch(html)
-	if len(m) > 1 {
-		n, err := strconv.Atoi(strings.ReplaceAll(m[1], " ", ""))
-		if err == nil {
-			return n
-		}
+	if len(m) < 2 {
+		return 0, false, false
 	}
-	return 0
+	n, err := strconv.Atoi(strings.ReplaceAll(m[1], " ", ""))
+	if err != nil {
+		return 0, false, false
+	}
+	capped = len(m) > 2 && m[2] == "+"
+	return n, true, capped
 }
 
 // HasNoResultsMarker reports whether the page explicitly states that the query
@@ -559,8 +636,10 @@ func ParseSearchPage(html, source string) SearchResult {
 		ServerFilterSupport: ServerFilterSupport(),
 	}
 
-	result.Listings = append(result.Listings, ParseListings(html)...)
-	result.TotalCount = ParseTotalCount(html)
+	scan := ScanListings(html)
+	result.Listings = append(result.Listings, scan.Listings...)
+	result.absorbCardScan(scan)
+	result.TotalCount, result.TotalCountReported, result.TotalCountCapped = ParseTotalCountEvidence(html)
 	noResultsMarker := HasNoResultsMarker(html)
 
 	if len(result.Listings) == 0 && result.TotalCount == 0 && !noResultsMarker {
@@ -826,9 +905,12 @@ func ClassifyDetailPage(html string) DetailPageKind {
 //
 // requestedURL may be empty when the caller only wants the page judged on its
 // own (the offline fixture path): the page must still expose a canonical advert
-// identity of its own, but no comparison is made. The requested URL is never
-// used as a fallback for missing identity — unknown identity stays unknown —
-// and no failure is ever reported as a successful detail with empty fields.
+// identity of its own, but no comparison is made. A non-empty requested URL must
+// carry its own 15-digit advert number; an unparseable requested identity is an
+// error, never permission to skip the ownership check. The requested URL is
+// never used as a fallback for missing identity — unknown identity stays
+// unknown — and no failure is ever reported as a successful detail with empty
+// fields.
 func ParseDetailPage(html, requestedURL string) (DetailListing, error) {
 	return ParseDetailPageWithMeta(html, requestedURL, "")
 }
@@ -854,6 +936,13 @@ func ParseDetailPageWithMeta(html, requestedURL, effectiveURL string) (DetailLis
 			EffectiveURL:      strings.TrimSpace(effectiveURL),
 			Message:           message,
 		}
+	}
+
+	// A non-empty requested URL must name an advert. Verifying ownership is not
+	// optional when the requested identity is malformed: skipping the comparison
+	// would accept whatever page the source served, including a different advert.
+	if strings.TrimSpace(requestedURL) != "" && requestedID == "" {
+		return reject(DetailErrorMissingIdentity, "requested URL carries no 15-digit advert number, so the page's identity cannot be verified")
 	}
 
 	switch ClassifyDetailPage(html) {
@@ -925,9 +1014,15 @@ func ParseDetail(html string) DetailListing {
 	d := DetailListing{ContractVersion: DetailContractVersion}
 	ev := newDetailEvidence()
 
-	// 1. Full description from class="text" div (first match is the listing text,
-	// second is usually "В imot.bg от YYYY г. agency.imot.bg")
-	textMatches := reDetailText.FindAllStringSubmatch(html, 2)
+	// 1. Full description from class="text" divs. The page can carry several: the
+	// listing text, the "В imot.bg от YYYY г." provenance line, and occasionally
+	// further text blocks. Every block is inspected. A description that is short,
+	// or that only appears after the first two blocks, is still the source's
+	// description; missing it made the field look verified_absent and let the
+	// consumer clear a stored description it never disproved.
+	textMatches := reDetailText.FindAllStringSubmatch(html, -1)
+	sawTextContainer := len(textMatches) > 0
+	sawProvenance := false
 	for _, m := range textMatches {
 		clean := stripTags(m[1])
 		clean = decorativeEntities.Replace(clean)
@@ -935,9 +1030,10 @@ func ParseDetail(html string) DetailListing {
 		clean = strings.ReplaceAll(clean, "\u00a0", " ")
 		// Skip the "В imot.bg от" line
 		if strings.HasPrefix(clean, "В imot.bg от") {
+			sawProvenance = true
 			continue
 		}
-		if len(clean) > 20 {
+		if clean != "" {
 			d.FullDescription = clean
 			break
 		}
@@ -945,10 +1041,14 @@ func ParseDetail(html string) DetailListing {
 	switch {
 	case d.FullDescription != "":
 		ev.present(DetailKeyFullDescription, d.FullDescription, DetailReasonTextBlock)
-	case len(textMatches) > 0:
-		// The advert's own text container exists but carries no description
-		// (typically only the "В imot.bg от" provenance line).
+	case sawProvenance:
+		// The advert's own text container rendered only its provenance line. That
+		// is the source's recognized structure for "this advert has no
+		// description text", so verified absence is justified.
 		ev.verifiedAbsent(DetailKeyFullDescription, nil, DetailReasonTextBlockEmpty)
+	case sawTextContainer:
+		// An empty text container is a placeholder, not proof of absence.
+		ev.unknown(DetailKeyFullDescription, DetailReasonTextBlockPlaceholder)
 	default:
 		ev.unknown(DetailKeyFullDescription, DetailReasonNoSelectorHit)
 	}
@@ -1183,8 +1283,12 @@ func ParseDetail(html string) DetailListing {
 		ev.unknown(DetailKeyPhotoURLs, DetailReasonNoSelectorHit)
 	}
 
-	// 7. Feature tags from the "Особености" block.
+	// 7. Feature tags from the "Особености" block. A matched block is not by
+	// itself proof that the advert has no features: changed inner markup renders
+	// tags this parser does not recognize, and treating that as verified absence
+	// cleared stored features. Only a provably empty container is absence.
 	featuresBlockSeen := false
+	featuresContainerEmpty := false
 	if m := reFeaturesBlock.FindStringSubmatch(html); len(m) > 1 {
 		featuresBlockSeen = true
 		seen := make(map[string]bool)
@@ -1196,13 +1300,24 @@ func ParseDetail(html string) DetailListing {
 			seen[f] = true
 			d.Features = append(d.Features, f)
 		}
+		// The capture stops at the first closing </div>, so drop that one
+		// delimiter before judging whether the container is empty.
+		items := m[1]
+		if idx := strings.LastIndex(items, "</div>"); idx >= 0 {
+			items = items[:idx]
+		}
+		featuresContainerEmpty = strings.TrimSpace(stripTags(items)) == "" && !strings.Contains(items, "<")
 	}
 	switch {
 	case len(d.Features) > 0:
 		ev.present(DetailKeyFeatures, d.Features, DetailReasonFeaturesBlock)
-	case featuresBlockSeen:
-		// The source rendered its features block with no tag in it.
+	case featuresContainerEmpty:
+		// The source rendered its features container with nothing in it.
 		ev.verifiedAbsent(DetailKeyFeatures, []string{}, DetailReasonFeaturesBlockEmpty)
+	case featuresBlockSeen:
+		// The container exists but its inner markup produced no recognized tag,
+		// so it proves nothing about the advert's features.
+		ev.unknown(DetailKeyFeatures, DetailReasonFeaturesUnrecognized)
 	default:
 		ev.unknown(DetailKeyFeatures, DetailReasonNoSelectorHit)
 	}

@@ -118,6 +118,7 @@ const (
 const (
 	DetailReasonTextBlock            = "text_block"
 	DetailReasonTextBlockEmpty       = "text_block_empty"
+	DetailReasonTextBlockPlaceholder = "text_block_placeholder"
 	DetailReasonParamsBlock          = "params_block"
 	DetailReasonParamsKeyAbsent      = "params_key_absent"
 	DetailReasonParamsValueUnparsed  = "params_value_unparsed"
@@ -132,6 +133,7 @@ const (
 	DetailReasonPhotoSelector        = "photo_selector"
 	DetailReasonFeaturesBlock        = "features_block"
 	DetailReasonFeaturesBlockEmpty   = "features_block_empty"
+	DetailReasonFeaturesUnrecognized = "features_block_unrecognized"
 	DetailReasonPublishedAtMarker    = "published_at_marker"
 	DetailReasonPublishedAtUnparsed  = "published_at_marker_unparsed"
 	DetailReasonBrokerNameBlock      = "broker_name_block"
@@ -318,6 +320,39 @@ type SearchResult struct {
 	// (its "Няма намерени обяви" marker). It stays false when a page merely
 	// yielded no cards, which is signalled through Partial and Errors instead.
 	EmptyVerified bool `json:"empty_verified"`
+	// Coverage evidence (additive). These fields let a consumer decide whether a
+	// sweep is exhaustive instead of reading "no cards returned" as an empty
+	// market. They never change the meaning of the legacy fields.
+	//
+	// TotalCountReported is true only when the source page printed its own total
+	// count. total_count alone cannot distinguish "the source reported zero" from
+	// "the source printed no count", and a coverage decision must not confuse the
+	// two.
+	TotalCountReported bool `json:"total_count_reported"`
+	// TotalCountCapped is true when the source printed its count in the clamped
+	// "1000+" form, so total_count is a lower bound rather than the real total.
+	TotalCountCapped bool `json:"total_count_capped"`
+	// NeighborhoodResolution records how resolved_neighborhood_slug was obtained:
+	// "" when none was requested, "probe" when the transliterated URL answered,
+	// "redirect" when the source's own form resolved it,
+	// "unverified_transliteration" when neither check confirmed it, and
+	// "unresolved" when no slug could be built. Only a confirmed resolution can
+	// support a completeness claim.
+	NeighborhoodResolution string `json:"neighborhood_resolution,omitempty"`
+	// CardBlocks is the number of listing-card blocks seen across the fetched
+	// pages.
+	CardBlocks int `json:"card_blocks"`
+	// DroppedCards is the number of CardBlocks that were NOT emitted as listings.
+	// A positive value is a parsed-count mismatch and makes coverage unproven; it
+	// is never evidence that those cards do not exist.
+	DroppedCards int `json:"dropped_cards"`
+	// UnknownTypeCards is the number of emitted cards whose property type this
+	// CLI could not recognize. Such a card may belong to any type partition, so it
+	// cannot support an exhaustive type decomposition.
+	UnknownTypeCards int `json:"unknown_type_cards"`
+	// UnknownTypeSamples names up to a few unrecognized card types so a map
+	// correction has something to act on without copying page HTML.
+	UnknownTypeSamples []string `json:"unknown_type_samples,omitempty"`
 	// ServerFilterSupport names every filter this CLI is able to apply at the
 	// SOURCE, independent of what one particular query used.
 	//
@@ -331,6 +366,28 @@ type SearchResult struct {
 	ServerFilterSupport []string      `json:"server_filter_support"`
 	Stats               *SearchStats  `json:"stats,omitempty"` // set by search --full
 	Errors              []SearchError `json:"errors,omitempty"`
+}
+
+// Neighborhood-resolution evidence values carried in
+// SearchResult.NeighborhoodResolution. Only probe and redirect confirmed the
+// slug against the source; the other two cannot support a completeness claim.
+const (
+	NeighborhoodResolutionProbe      = "probe"
+	NeighborhoodResolutionRedirect   = "redirect"
+	NeighborhoodResolutionUnverified = "unverified_transliteration"
+	NeighborhoodResolutionUnresolved = "unresolved"
+)
+
+// CardScan is the result of reading one page's listing-card blocks. ParseListings
+// returns only the accepted rows; ScanListings also returns the counts a
+// completeness decision needs, because a card dropped for missing type/price/size
+// or carrying an unrecognized property type otherwise disappears without a trace.
+type CardScan struct {
+	Listings           []Listing
+	CardBlocks         int
+	DroppedCards       int
+	UnknownTypeCards   int
+	UnknownTypeSamples []string
 }
 
 // CityMap maps Bulgarian city names to URL slugs

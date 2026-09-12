@@ -234,34 +234,45 @@ func (c *Client) FetchDetailsConcurrent(listings []Listing) []error {
 	return errs
 }
 
-// resolveNeighborhoodSlug converts a Bulgarian neighborhood name to a URL slug.
+// resolveNeighborhoodSlugEvidence converts a Bulgarian neighborhood name to a
+// URL slug and reports how the slug was obtained, so a caller can tell a
+// source-confirmed slug from an unverified transliteration guess. The returned
+// evidence is one of the NeighborhoodResolution* constants in types.go.
+//
 // First tries transliteration. If the transliterated URL returns 404, falls back
-// to POST form resolution via f40 parameter.
-func (c *Client) resolveNeighborhoodSlug(params SearchParams) string {
+// to POST form resolution via f40 parameter. When neither confirms the slug it
+// still returns the transliteration (the query has to address something), but
+// the evidence records that the slug is unproven.
+func (c *Client) resolveNeighborhoodSlugEvidence(params SearchParams) (string, string) {
 	if params.Neighborhood == "" {
-		return ""
+		return "", ""
 	}
 
 	// Try transliteration first
 	slug := translit.ToSlug(params.Neighborhood)
 	if slug == "" {
-		return ""
+		return "", NeighborhoodResolutionUnresolved
 	}
 
 	// Verify the transliterated slug works by probing the URL
 	testURL := buildURLWithSlug(params, slug, 1)
-	_, err := c.FetchPage(testURL)
-	if err == nil {
-		return slug
+	if _, err := c.FetchPage(testURL); err == nil {
+		return slug, NeighborhoodResolutionProbe
 	}
 
 	// Transliterated URL failed — try POST form to resolve correct slug
-	resolvedSlug := c.resolveSlugViaPost(params)
-	if resolvedSlug != "" {
-		return resolvedSlug
+	if resolvedSlug := c.resolveSlugViaPost(params); resolvedSlug != "" {
+		return resolvedSlug, NeighborhoodResolutionRedirect
 	}
 
 	// Fall back to transliteration even if unverified
+	return slug, NeighborhoodResolutionUnverified
+}
+
+// resolveNeighborhoodSlug keeps its original signature for callers that only
+// need the slug.
+func (c *Client) resolveNeighborhoodSlug(params SearchParams) string {
+	slug, _ := c.resolveNeighborhoodSlugEvidence(params)
 	return slug
 }
 
@@ -299,9 +310,16 @@ func (c *Client) resolveSlugViaPost(params SearchParams) string {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
-	// Don't follow redirects — we just want the Location header
+	// Don't follow redirects — we just want the Location header. The form client
+	// reuses the caller's transport (and therefore its proxy/pacing settings)
+	// rather than opening an unrelated connection path.
+	transport := http.DefaultTransport
+	if c.httpClient != nil && c.httpClient.Transport != nil {
+		transport = c.httpClient.Transport
+	}
 	checkClient := &http.Client{
-		Timeout: 15 * time.Second,
+		Timeout:   15 * time.Second,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -555,7 +573,7 @@ func (c *Client) SearchWithMeta(params SearchParams) (SearchResult, error) {
 	// Resolve neighborhood slug if neighborhood is specified
 	neighborhoodSlug := ""
 	if params.Neighborhood != "" {
-		neighborhoodSlug = c.resolveNeighborhoodSlug(params)
+		neighborhoodSlug, result.NeighborhoodResolution = c.resolveNeighborhoodSlugEvidence(params)
 		result.ResolvedNeighborhoodSlug = neighborhoodSlug
 	}
 	result.ServerFilters, result.ClientFilters = SearchFilters(params, neighborhoodSlug)
@@ -568,10 +586,12 @@ func (c *Client) SearchWithMeta(params SearchParams) (SearchResult, error) {
 		return result, fmt.Errorf("page 1: %w", err)
 	}
 
-	listings := ParseListings(html)
+	page1 := ScanListings(html)
+	listings := page1.Listings
 	result.Listings = append(result.Listings, listings...)
+	result.absorbCardScan(page1)
 	result.PagesFetched = 1
-	result.TotalCount = ParseTotalCount(html)
+	result.TotalCount, result.TotalCountReported, result.TotalCountCapped = ParseTotalCountEvidence(html)
 	noResultsMarker := HasNoResultsMarker(html)
 
 	// A page with no cards, no source total and no explicit no-results marker is
@@ -602,8 +622,8 @@ func (c *Client) SearchWithMeta(params SearchParams) (SearchResult, error) {
 		if result.TotalCount > 0 {
 			totalPages = (result.TotalCount + PerPage - 1) / PerPage
 		} else {
-			// Couldn't parse total count (e.g., "1000+ обяви").
-			// Use a safety cap and rely on break-on-empty-listings.
+			// The source printed no parseable total count. Use a safety cap and
+			// rely on break-on-empty-listings.
 			if len(listings) >= PerPage {
 				totalPages = reMaxPages
 				result.Partial = true
@@ -627,7 +647,9 @@ func (c *Client) SearchWithMeta(params SearchParams) (SearchResult, error) {
 			break
 		}
 
-		pageListings := ParseListings(pageHTML)
+		pageScan := ScanListings(pageHTML)
+		result.absorbCardScan(pageScan)
+		pageListings := pageScan.Listings
 		if len(pageListings) == 0 {
 			// Reaching the end is only credible when the source says so. A page
 			// that is neither a result page nor the explicit no-results page is

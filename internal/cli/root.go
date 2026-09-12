@@ -205,8 +205,8 @@ func runDetail(cmd *cobra.Command, args []string) error {
 	}
 
 	url := args[0]
-	if !strings.HasPrefix(url, "https://www.imot.bg/obiava-") {
-		return fmt.Errorf("URL must be an imot.bg listing URL (e.g. https://www.imot.bg/obiava-...)")
+	if !strings.HasPrefix(url, "https://www.imot.bg/obiava-") || scraper.AdvertIDFromURL(url) == "" {
+		return fmt.Errorf("URL must be an imot.bg listing URL carrying a 15-digit advert number (e.g. https://www.imot.bg/obiava-...)")
 	}
 
 	client := scraper.NewClient()
