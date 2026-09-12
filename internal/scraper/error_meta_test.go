@@ -144,3 +144,23 @@ func TestParseDetailPageWithMetaRecordsEffectiveURLOnReject(t *testing.T) {
 		t.Errorf("ParseDetailPage effective_url = %q, want empty", de.EffectiveURL)
 	}
 }
+
+// The presence contract is success-only metadata: a typed error payload keeps
+// its established shape and must not grow contract_version or field_evidence.
+func TestDetailErrorJSONHasNoSuccessMetadata(t *testing.T) {
+	payload, err := json.Marshal(&DetailError{
+		Kind:              DetailErrorWrongIdentity,
+		RequestedURL:      legitDetailURL,
+		RequestedAdvertID: "177425523801314",
+		ObservedAdvertID:  "176754466608675",
+		Message:           "wrong advert",
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, forbidden := range []string{"field_evidence", "contract_version"} {
+		if strings.Contains(string(payload), forbidden) {
+			t.Errorf("error payload grew %q: %s", forbidden, payload)
+		}
+	}
+}

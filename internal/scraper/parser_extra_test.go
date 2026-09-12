@@ -83,6 +83,22 @@ func TestParseDetailExtractsFeaturesBrokerPublishedVat(t *testing.T) {
 	if d.VatNote != "Не се начислява ДДС" {
 		t.Errorf("vat_note = %q", d.VatNote)
 	}
+
+	// The observed fields carry matching evidence, and a field this page's
+	// markup never carried stays unknown rather than verified absent.
+	for _, tc := range []struct{ key, reason string }{
+		{DetailKeyFeatures, DetailReasonFeaturesBlock},
+		{DetailKeyPublishedAt, DetailReasonPublishedAtMarker},
+		{DetailKeyBrokerName, DetailReasonBrokerNameBlock},
+		{DetailKeyBrokerPhone, DetailReasonBrokerPhoneBlock},
+		{DetailKeyAgencyOffice, DetailReasonAgencyOfficeBlock},
+		{DetailKeyVatNote, DetailReasonVatNoteMarker},
+	} {
+		requireDetailEvidence(t, d, tc.key, DetailPresencePresent, tc.reason)
+	}
+	// This fixture wraps its params in class="adParams" only, so no labelled
+	// params key was recognized: floor is unknown, not verified absent.
+	requireDetailEvidence(t, d, DetailKeyFloor, DetailPresenceUnknown, DetailReasonNoSelectorHit)
 }
 
 func TestUniquePhotoURLsDedupsSizeVariants(t *testing.T) {

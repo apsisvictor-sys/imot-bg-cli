@@ -165,6 +165,9 @@ func newDetailCmd() *cobra.Command {
 		Use:   "detail [url]",
 		Short: "Fetch or parse one listing's detail page",
 		Long: "Fetches a listing's detail page from imot.bg and extracts enriched data: full description, floor, year, heating, construction type, all phones, agency URL, photos, features and broker contact.\n\n" +
+			"A successful payload keeps its flat fields and adds contract_version=imot-detail-v2, advert_id " +
+			"(the page's own advert number) and field_evidence, which resolves every named detail field to " +
+			"present, verified_absent or unknown so a missing selector is never read as absence.\n\n" +
 			"With --file it parses a saved page instead and makes no network request. The saved page is " +
 			"validated exactly like a live one: it must be a genuine advert page and must carry its own " +
 			"advert identity. A challenge page, a removal notice, an unreadable page or a page with " +

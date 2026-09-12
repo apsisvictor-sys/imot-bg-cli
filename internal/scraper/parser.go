@@ -835,10 +835,11 @@ func ParseDetailPage(html, requestedURL string) (DetailListing, error) {
 
 // ParseDetailPageWithMeta is ParseDetailPage plus effectiveURL, the URL the
 // source finally served after redirects. It is recorded on every rejection as
-// error metadata so a consumer can see where a redirect actually landed; the
-// success payload keeps its original shape and its canonical "url". An empty
-// effectiveURL (offline parse, or no response) omits the field rather than
-// pretending the requested URL was served.
+// error metadata so a consumer can see where a redirect actually landed. The
+// success payload keeps its original flat fields and its canonical "url", with
+// the presence contract (contract_version, advert_id, field_evidence) added on
+// top. An empty effectiveURL (offline parse, or no response) omits the field
+// rather than pretending the requested URL was served.
 func ParseDetailPageWithMeta(html, requestedURL, effectiveURL string) (DetailListing, error) {
 	canonical, observedID := advertIdentity(html)
 	requestedID := AdvertIDFromURL(requestedURL)
@@ -873,13 +874,56 @@ func ParseDetailPageWithMeta(html, requestedURL, effectiveURL string) (DetailLis
 
 	detail := ParseDetail(html)
 	detail.URL = canonical
+	// advert_id comes from the page's own independently parsed identity; the
+	// requested URL is never substituted for it.
+	detail.AdvertID = observedID
 	return detail, nil
 }
 
+// detailEvidence accumulates the per-field presence record for one parsed
+// detail page. Every named DetailKey starts at unknown with a bounded
+// no_selector_hit reason, so a field the parser never inspected can never be
+// published as verified absence.
+type detailEvidence struct {
+	fields map[string]DetailFieldEvidence
+}
+
+func newDetailEvidence() *detailEvidence {
+	fields := make(map[string]DetailFieldEvidence, len(DetailKeys))
+	for _, key := range DetailKeys {
+		fields[key] = DetailFieldEvidence{State: DetailPresenceUnknown, Raw: nil, Reason: DetailReasonNoSelectorHit}
+	}
+	return &detailEvidence{fields: fields}
+}
+
+func (e *detailEvidence) set(key, state string, raw any, reason string) {
+	e.fields[key] = DetailFieldEvidence{State: state, Raw: raw, Reason: reason}
+}
+
+func (e *detailEvidence) present(key string, raw any, reason string) {
+	e.set(key, DetailPresencePresent, raw, reason)
+}
+
+func (e *detailEvidence) verifiedAbsent(key string, raw any, reason string) {
+	e.set(key, DetailPresenceVerifiedAbsent, raw, reason)
+}
+
+func (e *detailEvidence) unknown(key, reason string) {
+	e.set(key, DetailPresenceUnknown, nil, reason)
+}
+
 // ParseDetail extracts enriched data from a listing's detail page HTML.
+//
+// Every DetailKeys entry receives an evidence entry: present when a value of
+// the expected type was extracted, verified_absent when a recognized source
+// structure proves the source did not advertise the field, and unknown when
+// nothing proved either way. Unknown is never published as verified absence.
+// The contract version tags the payload; advert_id is filled by
+// ParseDetailPageWithMeta, which owns identity validation.
 // Returns a DetailListing with fields only available on the detail page.
 func ParseDetail(html string) DetailListing {
-	d := DetailListing{}
+	d := DetailListing{ContractVersion: DetailContractVersion}
+	ev := newDetailEvidence()
 
 	// 1. Full description from class="text" div (first match is the listing text,
 	// second is usually "В imot.bg от YYYY г. agency.imot.bg")
@@ -898,10 +942,31 @@ func ParseDetail(html string) DetailListing {
 			break
 		}
 	}
+	switch {
+	case d.FullDescription != "":
+		ev.present(DetailKeyFullDescription, d.FullDescription, DetailReasonTextBlock)
+	case len(textMatches) > 0:
+		// The advert's own text container exists but carries no description
+		// (typically only the "В imot.bg от" provenance line).
+		ev.verifiedAbsent(DetailKeyFullDescription, nil, DetailReasonTextBlockEmpty)
+	default:
+		ev.unknown(DetailKeyFullDescription, DetailReasonNoSelectorHit)
+	}
 
 	// 2. Structured params line: class="params"
 	// e.g. "Площ: 24 кв.м, Агенция, Етаж: 4-ти от 4, Газ: НЕ, ТEЦ: ДА, Тухла, Въведен в експлоатация 1930 - 1939 г.,"
+	//
+	// The recognized params block is an enumerable source structure: a labelled
+	// key the block omits is verified absence, not an unknown. The bare tokens
+	// (seller type, construction) are not labelled, so their absence stays
+	// unknown — an unrecognized token could be a new source value.
+	paramsBlockSeen := false
+	// paramsRecognized records that the block rendered at least one known key.
+	// An empty or unrecognized block proves nothing about the keys it omits.
+	paramsRecognized := false
+	sawFloorKey, sawGasKey, sawTECKey, sawYearKey := false, false, false, false
 	if m := reDetailParams.FindStringSubmatch(html); len(m) > 1 {
+		paramsBlockSeen = true
 		params := stripTags(m[1])
 		paramsParts := strings.Split(params, ",")
 		for _, p := range paramsParts {
@@ -912,10 +977,13 @@ func ParseDetail(html string) DetailListing {
 			// Seller type
 			if p == "Агенция" || p == "Частно лице" || p == "Частно лицо" {
 				d.SellerType = p
+				paramsRecognized = true
 				continue
 			}
 			// Floor
 			if strings.HasPrefix(p, "Етаж:") {
+				sawFloorKey = true
+				paramsRecognized = true
 				floorVal := strings.TrimSpace(strings.TrimPrefix(p, "Етаж:"))
 				// Normalize Партер → 0
 				if reParterDetail.MatchString(floorVal) {
@@ -926,11 +994,15 @@ func ParseDetail(html string) DetailListing {
 			}
 			// Gas
 			if strings.HasPrefix(p, "Газ:") {
+				sawGasKey = true
+				paramsRecognized = true
 				d.HeatingGas = strings.TrimSpace(strings.TrimPrefix(p, "Газ:"))
 				continue
 			}
 			// TEC (imot.bg uses mixed Cyrillic/Latin: ТEЦ where E can be either)
 			if strings.HasPrefix(p, "ТEЦ:") || strings.HasPrefix(p, "ТЕЦ:") {
+				sawTECKey = true
+				paramsRecognized = true
 				val := p
 				val = strings.TrimPrefix(val, "ТEЦ:")
 				val = strings.TrimPrefix(val, "ТЕЦ:")
@@ -940,10 +1012,13 @@ func ParseDetail(html string) DetailListing {
 			// Construction type (Тухла, Панел, ЕПК, etc.)
 			if p == "Тухла" || p == "Панел" || p == "ЕПК" || p == "Гредоред" || p == "Метална конструкция" {
 				d.ConstructionType = p
+				paramsRecognized = true
 				continue
 			}
 			// Year
 			if strings.HasPrefix(p, "Въведен в експлоатация") {
+				sawYearKey = true
+				paramsRecognized = true
 				p = strings.TrimSuffix(p, ",")
 				p = strings.TrimSpace(p)
 				if m2 := reYearRange.FindStringSubmatch(p); len(m2) > 2 {
@@ -963,6 +1038,41 @@ func ParseDetail(html string) DetailListing {
 				continue
 			}
 		}
+	}
+
+	setParamsEvidence := func(key, value string, sawKey bool) {
+		switch {
+		case value != "":
+			ev.present(key, value, DetailReasonParamsBlock)
+		case sawKey:
+			ev.unknown(key, DetailReasonParamsValueUnparsed)
+		case paramsRecognized:
+			ev.verifiedAbsent(key, nil, DetailReasonParamsKeyAbsent)
+		case paramsBlockSeen:
+			// The block matched but rendered no recognizable key, so it proves
+			// nothing about the keys it omits.
+			ev.unknown(key, DetailReasonParamsUnrecognized)
+		default:
+			ev.unknown(key, DetailReasonNoSelectorHit)
+		}
+	}
+	setParamsEvidence(DetailKeyFloor, d.Floor, sawFloorKey)
+	setParamsEvidence(DetailKeyHeatingGas, d.HeatingGas, sawGasKey)
+	setParamsEvidence(DetailKeyHeatingTEC, d.HeatingTEC, sawTECKey)
+	setParamsEvidence(DetailKeyYearBuilt, d.YearBuilt, sawYearKey)
+	if d.SellerType != "" {
+		ev.present(DetailKeySellerType, d.SellerType, DetailReasonParamsBlock)
+	} else if paramsBlockSeen {
+		ev.unknown(DetailKeySellerType, DetailReasonParamsUnrecognized)
+	} else {
+		ev.unknown(DetailKeySellerType, DetailReasonNoSelectorHit)
+	}
+	if d.ConstructionType != "" {
+		ev.present(DetailKeyConstructionType, d.ConstructionType, DetailReasonParamsBlock)
+	} else if paramsBlockSeen {
+		ev.unknown(DetailKeyConstructionType, DetailReasonParamsUnrecognized)
+	} else {
+		ev.unknown(DetailKeyConstructionType, DetailReasonNoSelectorHit)
 	}
 
 	// 3. Phones from detail page - collect all unique phone numbers
@@ -1000,21 +1110,44 @@ func ParseDetail(html string) DetailListing {
 	if len(phoneList) > 0 {
 		d.Phones = strings.Join(phoneList, ";")
 	}
+	if d.Phones != "" {
+		ev.present(DetailKeyPhones, d.Phones, DetailReasonPhoneBlock)
+	} else if len(phoneBlocks) > 0 {
+		// The phone container exists but resolved no number; it may hide the
+		// number behind a click, so this is unknown rather than absence.
+		ev.unknown(DetailKeyPhones, DetailReasonPhoneBlockUnresolved)
+	} else {
+		ev.unknown(DetailKeyPhones, DetailReasonNoSelectorHit)
+	}
 
 	// 4. Agency URL from class="url" div
+	agencyURLBlockSeen := false
 	if m := reDetailAgencyURL.FindStringSubmatch(html); len(m) > 1 {
+		agencyURLBlockSeen = true
 		d.AgencyURL = stripTags(m[1])
+	}
+	if d.AgencyURL != "" {
+		ev.present(DetailKeyAgencyURL, d.AgencyURL, DetailReasonAgencyURLBlock)
+	} else if agencyURLBlockSeen {
+		ev.unknown(DetailKeyAgencyURL, DetailReasonAgencyURLBlockEmpty)
+	} else {
+		ev.unknown(DetailKeyAgencyURL, DetailReasonNoSelectorHit)
 	}
 
 	if m := reDetailViewCount.FindStringSubmatch(html); len(m) > 1 {
 		d.ViewCount = parsePrice(m[1])
+		// A proven zero is a present value, not a missing one.
+		ev.present(DetailKeyViewCount, d.ViewCount, DetailReasonViewCountMarker)
+	} else {
+		ev.unknown(DetailKeyViewCount, DetailReasonNoSelectorHit)
 	}
-	if m := reDetailCorrectedAt.FindStringSubmatch(html); len(m) > 5 {
-		hour, _ := strconv.Atoi(m[1])
-		minute, _ := strconv.Atoi(m[2])
-		day, _ := strconv.Atoi(m[3])
-		month := parseBulgarianMonth(m[4])
-		year, _ := strconv.Atoi(m[5])
+	correctedMatch := reDetailCorrectedAt.FindStringSubmatch(html)
+	if len(correctedMatch) > 5 {
+		hour, _ := strconv.Atoi(correctedMatch[1])
+		minute, _ := strconv.Atoi(correctedMatch[2])
+		day, _ := strconv.Atoi(correctedMatch[3])
+		month := parseBulgarianMonth(correctedMatch[4])
+		year, _ := strconv.Atoi(correctedMatch[5])
 		if month != 0 {
 			loc, err := time.LoadLocation("Europe/Sofia")
 			if err != nil {
@@ -1022,6 +1155,14 @@ func ParseDetail(html string) DetailListing {
 			}
 			d.CorrectedAt = time.Date(year, month, day, hour, minute, 0, 0, loc).Format(time.RFC3339)
 		}
+	}
+	switch {
+	case d.CorrectedAt != "":
+		ev.present(DetailKeyCorrectedAt, d.CorrectedAt, DetailReasonCorrectedAtMarker)
+	case len(correctedMatch) > 5:
+		ev.unknown(DetailKeyCorrectedAt, DetailReasonCorrectedAtUnparsed)
+	default:
+		ev.unknown(DetailKeyCorrectedAt, DetailReasonNoSelectorHit)
 	}
 
 	// 5. URL from the page itself (canonical). og:url wins; the canonical link is
@@ -1035,10 +1176,17 @@ func ParseDetail(html string) DetailListing {
 	if len(photos) > 0 {
 		d.PhotoURL = photos[0]
 		d.PhotoURLs = photos
+		ev.present(DetailKeyPhotoURLs, photos, DetailReasonPhotoSelector)
+	} else {
+		// The parser has no marker that proves a gallery is empty, so an advert
+		// with no photo selector stays unknown, never verified absence.
+		ev.unknown(DetailKeyPhotoURLs, DetailReasonNoSelectorHit)
 	}
 
 	// 7. Feature tags from the "Особености" block.
+	featuresBlockSeen := false
 	if m := reFeaturesBlock.FindStringSubmatch(html); len(m) > 1 {
+		featuresBlockSeen = true
 		seen := make(map[string]bool)
 		for _, item := range reFeatureItem.FindAllStringSubmatch(m[1], -1) {
 			f := strings.TrimSpace(item[1])
@@ -1049,14 +1197,24 @@ func ParseDetail(html string) DetailListing {
 			d.Features = append(d.Features, f)
 		}
 	}
+	switch {
+	case len(d.Features) > 0:
+		ev.present(DetailKeyFeatures, d.Features, DetailReasonFeaturesBlock)
+	case featuresBlockSeen:
+		// The source rendered its features block with no tag in it.
+		ev.verifiedAbsent(DetailKeyFeatures, []string{}, DetailReasonFeaturesBlockEmpty)
+	default:
+		ev.unknown(DetailKeyFeatures, DetailReasonNoSelectorHit)
+	}
 
 	// 8. Published timestamp.
-	if m := reDetailPublishedAt.FindStringSubmatch(html); len(m) > 5 {
-		hour, _ := strconv.Atoi(m[1])
-		minute, _ := strconv.Atoi(m[2])
-		day, _ := strconv.Atoi(m[3])
-		month := parseBulgarianMonth(m[4])
-		year, _ := strconv.Atoi(m[5])
+	publishedMatch := reDetailPublishedAt.FindStringSubmatch(html)
+	if len(publishedMatch) > 5 {
+		hour, _ := strconv.Atoi(publishedMatch[1])
+		minute, _ := strconv.Atoi(publishedMatch[2])
+		day, _ := strconv.Atoi(publishedMatch[3])
+		month := parseBulgarianMonth(publishedMatch[4])
+		year, _ := strconv.Atoi(publishedMatch[5])
 		if month != 0 {
 			loc, err := time.LoadLocation("Europe/Sofia")
 			if err != nil {
@@ -1064,6 +1222,14 @@ func ParseDetail(html string) DetailListing {
 			}
 			d.PublishedAt = time.Date(year, month, day, hour, minute, 0, 0, loc).Format(time.RFC3339)
 		}
+	}
+	switch {
+	case d.PublishedAt != "":
+		ev.present(DetailKeyPublishedAt, d.PublishedAt, DetailReasonPublishedAtMarker)
+	case len(publishedMatch) > 5:
+		ev.unknown(DetailKeyPublishedAt, DetailReasonPublishedAtUnparsed)
+	default:
+		ev.unknown(DetailKeyPublishedAt, DetailReasonNoSelectorHit)
 	}
 
 	// 9. Broker block and agency office.
@@ -1078,12 +1244,26 @@ func ParseDetail(html string) DetailListing {
 	if m := reAgencyOffice.FindStringSubmatch(html); len(m) > 1 {
 		d.AgencyOffice = strings.TrimSpace(stripTags(m[1]))
 	}
+	setStringEvidence := func(key, value, presentReason string) {
+		if value != "" {
+			ev.present(key, value, presentReason)
+			return
+		}
+		ev.unknown(key, DetailReasonNoSelectorHit)
+	}
+	setStringEvidence(DetailKeyBrokerName, d.BrokerName, DetailReasonBrokerNameBlock)
+	setStringEvidence(DetailKeyBrokerPhone, d.BrokerPhone, DetailReasonBrokerPhoneBlock)
+	setStringEvidence(DetailKeyAgencyOffice, d.AgencyOffice, DetailReasonAgencyOfficeBlock)
 
 	// 10. VAT note.
 	if reVatNote.MatchString(html) {
 		d.VatNote = "Не се начислява ДДС"
+		ev.present(DetailKeyVatNote, d.VatNote, DetailReasonVatNoteMarker)
+	} else {
+		ev.unknown(DetailKeyVatNote, DetailReasonNoSelectorHit)
 	}
 
+	d.FieldEvidence = ev.fields
 	return d
 }
 

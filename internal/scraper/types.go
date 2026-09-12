@@ -88,6 +88,103 @@ func (e *DetailError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Kind, e.Message)
 }
 
+// Detail-presence contract (R1). A success payload is tagged with
+// DetailContractVersion and carries one DetailFieldEvidence entry per named
+// DetailKey, so a consumer can tell an observed value from a selector that was
+// never found. Unknown is never published as verified absence.
+const (
+	// DetailContractVersion tags the presence-aware detail success payload. It
+	// changes only when the meaning of the payload changes.
+	DetailContractVersion = "imot-detail-v2"
+)
+
+// Detail presence states carried in DetailFieldEvidence.State.
+const (
+	// DetailPresencePresent: the source advertised the field and a value of the
+	// expected type was extracted. ViewCount may be a proven zero.
+	DetailPresencePresent = "present"
+	// DetailPresenceVerifiedAbsent: a recognized source structure or explicit
+	// absence marker proves the source did not advertise the field. A consumer
+	// may clear the corresponding stored value.
+	DetailPresenceVerifiedAbsent = "verified_absent"
+	// DetailPresenceUnknown: nothing proved the field either way (no selector
+	// hit, an unparseable value, or a hidden/placeholder block). A consumer must
+	// preserve the previously stored fact.
+	DetailPresenceUnknown = "unknown"
+)
+
+// Detail evidence reason codes. They are a bounded set of extractor/evidence
+// names; raw HTML is never copied into a reason.
+const (
+	DetailReasonTextBlock            = "text_block"
+	DetailReasonTextBlockEmpty       = "text_block_empty"
+	DetailReasonParamsBlock          = "params_block"
+	DetailReasonParamsKeyAbsent      = "params_key_absent"
+	DetailReasonParamsValueUnparsed  = "params_value_unparsed"
+	DetailReasonParamsUnrecognized   = "params_value_unrecognized"
+	DetailReasonPhoneBlock           = "phone_block"
+	DetailReasonPhoneBlockUnresolved = "phone_block_unresolved"
+	DetailReasonAgencyURLBlock       = "agency_url_block"
+	DetailReasonAgencyURLBlockEmpty  = "agency_url_block_empty"
+	DetailReasonViewCountMarker      = "view_count_marker"
+	DetailReasonCorrectedAtMarker    = "corrected_at_marker"
+	DetailReasonCorrectedAtUnparsed  = "corrected_at_marker_unparsed"
+	DetailReasonPhotoSelector        = "photo_selector"
+	DetailReasonFeaturesBlock        = "features_block"
+	DetailReasonFeaturesBlockEmpty   = "features_block_empty"
+	DetailReasonPublishedAtMarker    = "published_at_marker"
+	DetailReasonPublishedAtUnparsed  = "published_at_marker_unparsed"
+	DetailReasonBrokerNameBlock      = "broker_name_block"
+	DetailReasonBrokerPhoneBlock     = "broker_phone_block"
+	DetailReasonAgencyOfficeBlock    = "agency_office_block"
+	DetailReasonVatNoteMarker        = "vat_note_marker"
+	DetailReasonNoSelectorHit        = "no_selector_hit"
+)
+
+// DetailKey names on the detail success payload. Every key always has an
+// evidence entry, even when the legacy flat JSON field is omitted.
+const (
+	DetailKeyFullDescription  = "full_description"
+	DetailKeyFloor            = "floor"
+	DetailKeyYearBuilt        = "year_built"
+	DetailKeyConstructionType = "construction_type"
+	DetailKeyHeatingTEC       = "heating_tec"
+	DetailKeyHeatingGas       = "heating_gas"
+	DetailKeySellerType       = "seller_type"
+	DetailKeyPhones           = "phones"
+	DetailKeyAgencyURL        = "agency_url"
+	DetailKeyViewCount        = "view_count"
+	DetailKeyCorrectedAt      = "corrected_at"
+	DetailKeyPhotoURLs        = "photo_urls"
+	DetailKeyFeatures         = "features"
+	DetailKeyPublishedAt      = "published_at"
+	DetailKeyBrokerName       = "broker_name"
+	DetailKeyBrokerPhone      = "broker_phone"
+	DetailKeyAgencyOffice     = "agency_office"
+	DetailKeyVatNote          = "vat_note"
+)
+
+// DetailKeys lists every key the presence contract requires evidence for, in
+// the plan's own order. Exported so a consumer can assert completeness.
+var DetailKeys = []string{
+	DetailKeyFullDescription, DetailKeyFloor, DetailKeyYearBuilt,
+	DetailKeyConstructionType, DetailKeyHeatingTEC, DetailKeyHeatingGas,
+	DetailKeySellerType, DetailKeyPhones, DetailKeyAgencyURL,
+	DetailKeyViewCount, DetailKeyCorrectedAt, DetailKeyPhotoURLs,
+	DetailKeyFeatures, DetailKeyPublishedAt, DetailKeyBrokerName,
+	DetailKeyBrokerPhone, DetailKeyAgencyOffice, DetailKeyVatNote,
+}
+
+// DetailFieldEvidence is one field's source evidence on the detail success
+// payload. Raw holds the observed source value in its JSON-native type (string,
+// string list, number, or null) and Reason is a bounded extractor/evidence
+// code, never arbitrary HTML.
+type DetailFieldEvidence struct {
+	State  string `json:"state"`
+	Raw    any    `json:"raw"`
+	Reason string `json:"reason"`
+}
+
 // DetailListing holds the enriched data extracted from a listing's detail page.
 // Search-page fields (ID, Type, City, Neighborhood, PriceEUR, PriceBGN, SizeSqM)
 // are NOT duplicated here — they come from the search card.
@@ -112,6 +209,14 @@ type DetailListing struct {
 	BrokerPhone      string   `json:"broker_phone,omitempty"`  // broker direct phone
 	AgencyOffice     string   `json:"agency_office,omitempty"` // office address, e.g. "ул. Отец Паисий 15, ет. 3, офис 9"
 	VatNote          string   `json:"vat_note,omitempty"`      // e.g. "Не се начислява ДДС"
+
+	// Additive presence metadata (imot-detail-v2). ContractVersion tags the
+	// payload; AdvertID is the page's independently parsed 15-digit advert
+	// number (never substituted from the requested URL); FieldEvidence resolves
+	// every DetailKeys entry to present, verified_absent or unknown.
+	ContractVersion string                         `json:"contract_version,omitempty"`
+	AdvertID        string                         `json:"advert_id,omitempty"`
+	FieldEvidence   map[string]DetailFieldEvidence `json:"field_evidence,omitempty"`
 }
 
 // Listing represents a single real estate listing from imot.bg
