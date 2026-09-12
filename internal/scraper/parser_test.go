@@ -385,12 +385,11 @@ func TestDetailEvidenceMarksVerifiedAbsenceNotUnknown(t *testing.T) {
 		requireDetailEvidence(t, detail, tc.key, DetailPresenceVerifiedAbsent, tc.reason)
 	}
 
-	// The features block rendered with no tag: the empty list is the absence
-	// proof, not a null and not an omitted entry.
-	if ev := detail.FieldEvidence[DetailKeyFeatures]; ev.Raw == nil {
-		t.Errorf("verified_absent features raw = nil, want an empty list")
-	} else if _, ok := ev.Raw.([]string); !ok {
-		t.Errorf("verified_absent features raw = %#v, want []string", ev.Raw)
+	// The features block rendered with no tag: the state and reason carry the
+	// absence proof; raw stays null because a non-present entry may not carry
+	// a value the consumer could mistake for observed data.
+	if ev := detail.FieldEvidence[DetailKeyFeatures]; ev.Raw != nil {
+		t.Errorf("verified_absent features raw = %#v, want null", ev.Raw)
 	}
 
 	// A bare token the parser does not recognize could be a new source value,

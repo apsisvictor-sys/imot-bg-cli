@@ -1312,8 +1312,10 @@ func ParseDetail(html string) DetailListing {
 	case len(d.Features) > 0:
 		ev.present(DetailKeyFeatures, d.Features, DetailReasonFeaturesBlock)
 	case featuresContainerEmpty:
-		// The source rendered its features container with nothing in it.
-		ev.verifiedAbsent(DetailKeyFeatures, []string{}, DetailReasonFeaturesBlockEmpty)
+		// The source rendered its features container with nothing in it. Raw
+		// stays null: a non-present entry may not carry a value, and the state
+		// plus reason carry the absence proof.
+		ev.verifiedAbsent(DetailKeyFeatures, nil, DetailReasonFeaturesBlockEmpty)
 	case featuresBlockSeen:
 		// The container exists but its inner markup produced no recognized tag,
 		// so it proves nothing about the advert's features.
