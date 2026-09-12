@@ -5,6 +5,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +63,17 @@ var (
 	reAdParams      = regexp.MustCompile(`class="adParams"`)
 	reChallengePage = regexp.MustCompile(`(?i)(cf-chl|__cf_chl|challenge-platform|cf_chl_opt|cf_chl_tk|just a moment|checking your browser|enable javascript and cookies|attention required|g-recaptcha|hcaptcha|recaptcha/api|достъпът е ограничен)`)
 	reRemovedNotice = regexp.MustCompile(`(?i)(обявата не е намерена|обявата е изтрита|обявата е премахната|обявата е свалена|не съществува такава обява)`)
+
+	// City-page taxonomy navigation. The city page advertises its property-type
+	// partitions in a dedicated navigation block; neighbourhood links sit
+	// outside it, so the block boundary is what separates a type slug from a
+	// place slug — their URLs are otherwise the same shape. A missing or renamed
+	// block is a loud failure, never an empty taxonomy.
+	reTaxonomyNavBlock   = regexp.MustCompile(`(?is)<(?:div|ul|ol|nav|section|table)[^>]*(?:class|id)\s*=\s*["'][^"']*(?:typelist|type-list|typeslist|propertytypes|property-types|vidove|vid-imot|tipove|tip-imot)[^"']*["'][^>]*>(.*?)</(?:div|ul|ol|nav|section|table)>`)
+	reTaxonomyTypeSelect = regexp.MustCompile(`(?is)<select[^>]*(?:name|id)\s*=\s*["'][^"']*type[^"']*["'][^>]*>(.*?)</select>`)
+	reHTMLAnchorHref     = regexp.MustCompile(`(?is)<a[^>]*\bhref\s*=\s*["']([^"']+)["']`)
+	reHTMLOptionValue    = regexp.MustCompile(`(?is)<option[^>]*\bvalue\s*=\s*["']([^"']+)["']`)
+	reASCIIPropertySlug  = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 )
 
 // ParseListings extracts listings from HTML
@@ -569,6 +581,137 @@ func ParseSearchPage(html, source string) SearchResult {
 	return result
 }
 
+// Taxonomy extraction -------------------------------------------------------
+
+// ParseTaxonomy reads one city page's advertised property-type taxonomy. It is
+// offline: html is the already-decoded page and no request is made.
+//
+// The page must prove it is a city page for params.CitySlug by carrying a
+// recognized type navigation block (or type select) with at least two
+// city-scope type links. A challenge page, a block page, a page for another
+// city or a page whose navigation moved therefore fails with an error. An empty
+// type list is never returned: unknown page kind cannot be read as "no types".
+func ParseTaxonomy(html string, params TaxonomyParams) (Taxonomy, error) {
+	if reChallengePage.MatchString(html) {
+		return Taxonomy{}, fmt.Errorf("taxonomy page is a bot challenge, not a city page")
+	}
+	citySlug := strings.TrimSpace(params.CitySlug)
+	if citySlug == "" {
+		return Taxonomy{}, fmt.Errorf("taxonomy needs a city slug to recognize its navigation links")
+	}
+
+	var candidates []string
+	for _, block := range reTaxonomyNavBlock.FindAllStringSubmatch(html, -1) {
+		for _, m := range reHTMLAnchorHref.FindAllStringSubmatch(block[1], -1) {
+			if slug, ok := taxonomySlugFromHref(m[1], citySlug); ok {
+				candidates = append(candidates, slug)
+			}
+		}
+	}
+	for _, block := range reTaxonomyTypeSelect.FindAllStringSubmatch(html, -1) {
+		for _, m := range reHTMLOptionValue.FindAllStringSubmatch(block[1], -1) {
+			if slug, ok := taxonomySlugFromOption(m[1], citySlug); ok {
+				candidates = append(candidates, slug)
+			}
+		}
+	}
+
+	slugs := SortedUniqueTaxonomySlugs(candidates)
+	if len(slugs) < 2 {
+		return Taxonomy{}, fmt.Errorf("city page %q exposes no recognizable type navigation for %q", params.SourceURL, citySlug)
+	}
+
+	return Taxonomy{
+		ContractVersion: TaxonomyContractVersion,
+		City:            params.City,
+		SourceURL:       params.SourceURL,
+		ObservedAt:      FormatTimestamp(time.Now().UTC()),
+		TypeSlugs:       slugs,
+		TaxonomyHash:    TaxonomyHash(slugs),
+	}, nil
+}
+
+// taxonomySlugFromHref extracts a type slug from a city-scope link such as
+// "//www.imot.bg/obiavi/prodazhbi/grad-sofiya/dvustaen". Links that leave the
+// requested city, point at another category, carry pagination or add extra path
+// segments are not type links.
+func taxonomySlugFromHref(href, citySlug string) (string, bool) {
+	v := strings.TrimSpace(href)
+	if i := strings.IndexAny(v, "?#"); i >= 0 {
+		v = v[:i]
+	}
+	idx := strings.Index(v, "/obiavi/")
+	if idx < 0 {
+		return "", false
+	}
+	segs := strings.Split(strings.Trim(v[idx:], "/"), "/")
+	if len(segs) != 4 || segs[0] != "obiavi" || segs[2] != citySlug {
+		return "", false
+	}
+	if segs[1] != "prodazhbi" && segs[1] != "naemi" {
+		return "", false
+	}
+	return normalizeTaxonomySlug(segs[3])
+}
+
+// taxonomySlugFromOption accepts a type select value, which may be a bare slug
+// or a full city-scope URL.
+func taxonomySlugFromOption(value, citySlug string) (string, bool) {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return "", false
+	}
+	if strings.Contains(v, "/") {
+		return taxonomySlugFromHref(v, citySlug)
+	}
+	return normalizeTaxonomySlug(v)
+}
+
+// normalizeTaxonomySlug keeps only a plausible ASCII source slug. The "all"/"vsichki"
+// placeholders a filter select may carry are not types, and pagination is not a
+// type either.
+func normalizeTaxonomySlug(raw string) (string, bool) {
+	slug := strings.ToLower(strings.TrimSpace(raw))
+	if slug == "" || slug == "all" || slug == "vsichki" {
+		return "", false
+	}
+	if strings.HasPrefix(slug, "p-") {
+		if _, err := strconv.Atoi(strings.TrimPrefix(slug, "p-")); err == nil {
+			return "", false
+		}
+	}
+	if !reASCIIPropertySlug.MatchString(slug) {
+		return "", false
+	}
+	return slug, true
+}
+
+// SortedUniqueTaxonomySlugs normalizes a raw slug list for the taxonomy payload:
+// trimmed, lowercased, ASCII-only, deduplicated and sorted. Exported so a
+// consumer can recompute the same list the hash commits to.
+func SortedUniqueTaxonomySlugs(raw []string) []string {
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, s := range raw {
+		slug := strings.ToLower(strings.TrimSpace(s))
+		if slug == "" || seen[slug] {
+			continue
+		}
+		seen[slug] = true
+		out = append(out, slug)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TaxonomyHash returns the full lowercase SHA-256 hex digest of the sorted
+// unique ASCII slugs joined with LF. It normalizes first, so callers cannot
+// hash a different order than they publish.
+func TaxonomyHash(raw []string) string {
+	h := sha256.Sum256([]byte(strings.Join(SortedUniqueTaxonomySlugs(raw), "\n")))
+	return fmt.Sprintf("%x", h)
+}
+
 // DetailPageKind classifies what a fetched or saved page actually is, judged
 // from its own content rather than from the URL that was requested.
 type DetailPageKind string
@@ -687,6 +830,16 @@ func ClassifyDetailPage(html string) DetailPageKind {
 // used as a fallback for missing identity — unknown identity stays unknown —
 // and no failure is ever reported as a successful detail with empty fields.
 func ParseDetailPage(html, requestedURL string) (DetailListing, error) {
+	return ParseDetailPageWithMeta(html, requestedURL, "")
+}
+
+// ParseDetailPageWithMeta is ParseDetailPage plus effectiveURL, the URL the
+// source finally served after redirects. It is recorded on every rejection as
+// error metadata so a consumer can see where a redirect actually landed; the
+// success payload keeps its original shape and its canonical "url". An empty
+// effectiveURL (offline parse, or no response) omits the field rather than
+// pretending the requested URL was served.
+func ParseDetailPageWithMeta(html, requestedURL, effectiveURL string) (DetailListing, error) {
 	canonical, observedID := advertIdentity(html)
 	requestedID := AdvertIDFromURL(requestedURL)
 
@@ -697,6 +850,7 @@ func ParseDetailPage(html, requestedURL string) (DetailListing, error) {
 			RequestedAdvertID: requestedID,
 			ObservedURL:       canonical,
 			ObservedAdvertID:  observedID,
+			EffectiveURL:      strings.TrimSpace(effectiveURL),
 			Message:           message,
 		}
 	}

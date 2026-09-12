@@ -76,6 +76,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newWatchCmd())
 	rootCmd.AddCommand(newCitiesCmd())
 	rootCmd.AddCommand(newDetailCmd())
+	rootCmd.AddCommand(newTaxonomyCmd())
 
 	return rootCmd
 }
@@ -260,6 +261,75 @@ func emitDetailError(err error) error {
 	return err
 }
 
+func newTaxonomyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "taxonomy",
+		Short: "Report the property-type taxonomy advertised by a city page",
+		Long: "Reads one imot.bg city page and prints the property-type slugs its own navigation advertises, as " +
+			"{contract_version, city, source_url, observed_at, type_slugs, taxonomy_hash}. The hash is the SHA-256 " +
+			"of the sorted unique slugs joined by LF, so two readings of the same page agree.\n\n" +
+			"With --file it parses a saved, correctly decoded city page and makes no network request. A page that " +
+			"is not a recognized city page for --city (challenge, block page, other city, moved navigation) exits " +
+			"non-zero instead of printing an empty taxonomy.",
+		Args: cobra.NoArgs,
+		RunE: runTaxonomy,
+	}
+	cmd.Flags().String("city", "", "City name (Bulgarian), e.g. София")
+	cmd.Flags().Bool("json", true, "JSON output (default true; JSON is the only supported shape)")
+	cmd.Flags().String("file", "", "Parse a saved city-page HTML file instead of fetching live (use - for stdin)")
+	return cmd
+}
+
+func runTaxonomy(cmd *cobra.Command, args []string) error {
+	cityFlag, err := cmd.Flags().GetString("city")
+	if err != nil {
+		return err
+	}
+	filePath, err := cmd.Flags().GetString("file")
+	if err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(cityFlag) == "" {
+		return fmt.Errorf("--city is required; a taxonomy names one city's source page")
+	}
+	city := resolveCity(cityFlag)
+	citySlug := scraper.CitySlug(city)
+	if citySlug == "" {
+		return fmt.Errorf("unknown city %q: no imot.bg city slug is known for it", cityFlag)
+	}
+
+	if filePath != "" {
+		raw, err := readLocalPage(filePath)
+		if err != nil {
+			return err
+		}
+		taxonomy, err := scraper.ParseTaxonomy(scraper.DecodeHTMLBytes(raw), scraper.TaxonomyParams{
+			City:      city,
+			CitySlug:  citySlug,
+			SourceURL: filePath,
+		})
+		if err != nil {
+			return err
+		}
+		return encodeTaxonomy(taxonomy)
+	}
+
+	taxonomy, err := scraper.NewClient().FetchTaxonomy(city)
+	if err != nil {
+		return err
+	}
+	return encodeTaxonomy(taxonomy)
+}
+
+// encodeTaxonomy writes the taxonomy payload compactly on stdout, matching the
+// shape the contract publishes.
+func encodeTaxonomy(taxonomy scraper.Taxonomy) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(taxonomy)
+}
+
 func resolveCity(city string) string {
 	if _, ok := scraper.CityMap[city]; ok {
 		return city
@@ -271,7 +341,36 @@ func resolveCity(city string) string {
 	return translit.NormalizeCity(city)
 }
 
+// validateBounds rejects impossible numeric bounds before any source request or
+// database access. Cobra's integer flags already refuse fractions, trailing
+// characters and unsafe integers at parse time; negatives and reversed ranges
+// were still accepted and could silently produce empty or surprising results.
+// Zero keeps its existing meaning: no bound for price/size, auto-detect for
+// --pages.
+func validateBounds(minPrice, maxPrice, minSqM, maxSqM, pages int) error {
+	if minPrice < 0 || maxPrice < 0 || minSqM < 0 || maxSqM < 0 {
+		return fmt.Errorf("price and size bounds must not be negative")
+	}
+	if pages < 0 {
+		return fmt.Errorf("--pages must not be negative; 0 means all pages")
+	}
+	if maxPrice > 0 && minPrice > maxPrice {
+		return fmt.Errorf("--min-price %d exceeds --max-price %d", minPrice, maxPrice)
+	}
+	if maxSqM > 0 && minSqM > maxSqM {
+		return fmt.Errorf("--min-sqm %d exceeds --max-sqm %d", minSqM, maxSqM)
+	}
+	return nil
+}
+
 func runSearch(cmd *cobra.Command, args []string) error {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+		return err
+	}
+	if flagFull && flagQuiet {
+		return fmt.Errorf("choose either --full or --quiet, not both")
+	}
+
 	filePath, err := cmd.Flags().GetString("file")
 	if err != nil {
 		return err
@@ -306,10 +405,6 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	// Client-side filtering
 	result.Listings = dedupListings(result.Listings)
 	result.Listings = filterListings(result.Listings, params, flagNeighborhood != "")
-
-	if flagFull && flagQuiet {
-		return fmt.Errorf("choose either --full or --quiet, not both")
-	}
 
 	if flagFull {
 		// Polite concurrent detail enrichment. Individual failures are
@@ -479,6 +574,9 @@ func readLocalPage(filePath string) ([]byte, error) {
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+		return err
+	}
 	if flagCity == "" {
 		return fmt.Errorf("--city is required")
 	}
@@ -525,6 +623,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 }
 
 func runLocal(cmd *cobra.Command, args []string) error {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+		return err
+	}
 	if flagCity == "" {
 		flagCity = ""
 	} else {
@@ -546,6 +647,9 @@ func runLocal(cmd *cobra.Command, args []string) error {
 }
 
 func runStats(cmd *cobra.Command, args []string) error {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+		return err
+	}
 	if flagCity == "" {
 		flagCity = ""
 	} else {
@@ -656,6 +760,9 @@ func runSQL(cmd *cobra.Command, args []string) error {
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+		return err
+	}
 	if flagCity == "" {
 		return fmt.Errorf("--city is required")
 	}

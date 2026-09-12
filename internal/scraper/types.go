@@ -58,6 +58,16 @@ const (
 // HTTPStatus is populated for DetailErrorFetchFailed when the source answered a
 // non-200 status, so a caller can treat a verified 404 differently from a 403 or
 // a timeout without parsing error strings.
+//
+// EffectiveURL is the URL the source finally served after redirects, when the
+// request produced a response. It is omitted when no response arrived (timeout,
+// DNS failure), because then the effective URL is unknown rather than equal to
+// the requested one.
+//
+// RetryAfterSeconds is the source's own Retry-After delay, parsed from the HTTP
+// response header. It is a pointer so a proven zero ("Retry-After: 0") emits 0
+// and an absent header omits the field entirely. It is only set when the header
+// was present and parseable as either delta-seconds or an HTTP date.
 type DetailError struct {
 	Kind              string `json:"kind"`
 	RequestedURL      string `json:"requested_url,omitempty"`
@@ -65,6 +75,8 @@ type DetailError struct {
 	ObservedURL       string `json:"observed_url,omitempty"`
 	ObservedAdvertID  string `json:"observed_advert_id,omitempty"`
 	HTTPStatus        int    `json:"http_status,omitempty"`
+	EffectiveURL      string `json:"effective_url,omitempty"`
+	RetryAfterSeconds *int   `json:"retry_after_seconds,omitempty"`
 	Message           string `json:"error"`
 }
 
@@ -302,6 +314,36 @@ var TypeMap = map[string]string{
 	// Retained for compatibility, but the city page does not advertise this
 	// slug and it must not be used as a completeness partition.
 	"земя": "zemedelska-zemya",
+}
+
+// TaxonomyContractVersion is the version tag on the city-page taxonomy payload.
+// It changes only when the meaning of the payload changes, so a consumer can
+// refuse a shape it does not understand instead of guessing.
+const TaxonomyContractVersion = "imot-taxonomy-v1"
+
+// Taxonomy is the property-type taxonomy advertised by one imot.bg city page.
+// The slugs come from the page's own navigation, not from this CLI's TypeMap:
+// the configured map is what the payload is compared against, so it cannot also
+// be its source. TypeSlugs is always sorted, unique and ASCII; TaxonomyHash is
+// the SHA-256 of those slugs joined by LF, so two runs over the same page agree
+// without sharing a clock or a network request.
+type Taxonomy struct {
+	ContractVersion string   `json:"contract_version"`
+	City            string   `json:"city"`
+	SourceURL       string   `json:"source_url"`
+	ObservedAt      string   `json:"observed_at"`
+	TypeSlugs       []string `json:"type_slugs"`
+	TaxonomyHash    string   `json:"taxonomy_hash"`
+}
+
+// TaxonomyParams tells ParseTaxonomy which city page it is reading. CitySlug is
+// the URL slug the navigation links must sit under ("grad-sofiya"); SourceURL is
+// the fetched page URL, or the local file path for the offline parse, and is
+// recorded verbatim as provenance.
+type TaxonomyParams struct {
+	City      string
+	CitySlug  string
+	SourceURL string
 }
 
 // SearchParams holds the parameters for a search query

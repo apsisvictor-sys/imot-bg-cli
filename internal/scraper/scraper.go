@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +60,11 @@ func jitteredSleep(base time.Duration) {
 type HTTPError struct {
 	StatusCode int
 	URL        string
+	// EffectiveURL is the URL the source finally served after redirects.
+	EffectiveURL string
+	// RetryAfterSeconds is the parsed Retry-After header; nil when the source
+	// sent no such header or sent an unparseable value.
+	RetryAfterSeconds *int
 }
 
 // Error keeps the original "HTTP <status> for <url>" wording.
@@ -83,9 +89,42 @@ func DecodeHTMLBytes(raw []byte) string {
 
 // FetchPage fetches a page from imot.bg and returns UTF-8 decoded HTML
 func (c *Client) FetchPage(pageURL string) (string, error) {
+	html, _, err := c.fetchPageMeta(pageURL)
+	return html, err
+}
+
+// parseRetryAfter reads an HTTP Retry-After header, the source's own pause
+// instruction. It accepts the delta-seconds form and the HTTP-date form, and
+// returns nil when the header is absent or does not parse, so an unprovable
+// value is omitted rather than guessed.
+func parseRetryAfter(header string, now time.Time) *int {
+	v := strings.TrimSpace(header)
+	if v == "" {
+		return nil
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs < 0 {
+			return nil
+		}
+		return &secs
+	}
+	if when, err := http.ParseTime(v); err == nil {
+		secs := int(when.Sub(now).Seconds())
+		if secs < 0 {
+			secs = 0
+		}
+		return &secs
+	}
+	return nil
+}
+
+// fetchPageMeta is FetchPage plus the URL the source finally served. The
+// effective URL is error evidence: a redirect can land on a challenge page or
+// on another advert, and the requested URL alone would hide that.
+func (c *Client) fetchPageMeta(pageURL string) (string, string, error) {
 	req, err := http.NewRequest("GET", pageURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("creating request: %w", err)
+		return "", "", fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -93,12 +132,22 @@ func (c *Client) FetchPage(pageURL string) (string, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("fetching page: %w", err)
+		return "", "", fmt.Errorf("fetching page: %w", err)
 	}
 	defer resp.Body.Close()
 
+	effectiveURL := pageURL
+	if resp.Request != nil && resp.Request.URL != nil && resp.Request.URL.String() != "" {
+		effectiveURL = resp.Request.URL.String()
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return "", &HTTPError{StatusCode: resp.StatusCode, URL: pageURL}
+		return "", effectiveURL, &HTTPError{
+			StatusCode:        resp.StatusCode,
+			URL:               pageURL,
+			EffectiveURL:      effectiveURL,
+			RetryAfterSeconds: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now()),
+		}
 	}
 
 	// Decode windows-1251 to UTF-8
@@ -106,10 +155,10 @@ func (c *Client) FetchPage(pageURL string) (string, error) {
 	utf8Reader := transform.NewReader(resp.Body, decoder)
 	body, err := io.ReadAll(utf8Reader)
 	if err != nil {
-		return "", fmt.Errorf("decoding response: %w", err)
+		return "", effectiveURL, fmt.Errorf("decoding response: %w", err)
 	}
 
-	return string(body), nil
+	return string(body), effectiveURL, nil
 }
 
 // FetchDetail fetches and parses a single listing's detail page.
@@ -127,21 +176,26 @@ func (c *Client) FetchDetail(listingURL string) (DetailListing, error) {
 // absent/wrong advert identity is returned as a typed *DetailError, never as a
 // DetailListing with substituted or empty fields.
 func (c *Client) fetchDetailNow(listingURL string) (DetailListing, error) {
-	html, err := c.FetchPage(listingURL)
+	html, effectiveURL, err := c.fetchPageMeta(listingURL)
 	if err != nil {
 		fetchErr := &DetailError{
 			Kind:              DetailErrorFetchFailed,
 			RequestedURL:      listingURL,
 			RequestedAdvertID: AdvertIDFromURL(listingURL),
+			EffectiveURL:      effectiveURL,
 			Message:           err.Error(),
 		}
 		var httpErr *HTTPError
 		if errors.As(err, &httpErr) {
 			fetchErr.HTTPStatus = httpErr.StatusCode
+			if httpErr.EffectiveURL != "" {
+				fetchErr.EffectiveURL = httpErr.EffectiveURL
+			}
+			fetchErr.RetryAfterSeconds = httpErr.RetryAfterSeconds
 		}
 		return DetailListing{}, fetchErr
 	}
-	return ParseDetailPage(html, listingURL)
+	return ParseDetailPageWithMeta(html, listingURL, effectiveURL)
 }
 
 // FetchDetailsConcurrent enriches listings with detail-page data using a
@@ -377,6 +431,38 @@ func resolveTypeSlug(propType string) string {
 		return slug
 	}
 	return ""
+}
+
+// CitySlug returns the imot.bg URL slug for a known city or oblast name, or ""
+// when the name is not one this CLI can address. It is the exported twin of the
+// internal resolver, for callers that need the slug without a live request.
+func CitySlug(city string) string {
+	return resolveCitySlug(city)
+}
+
+// CityPageURL returns the sales city page URL whose navigation advertises the
+// property-type taxonomy, or "" for an unknown city.
+func CityPageURL(city string) string {
+	slug := resolveCitySlug(city)
+	if slug == "" {
+		return ""
+	}
+	return BaseURL + "/prodazhbi/" + slug
+}
+
+// FetchTaxonomy fetches the city page and reads its advertised type taxonomy.
+// It is the live twin of ParseTaxonomy and makes exactly one request.
+func (c *Client) FetchTaxonomy(city string) (Taxonomy, error) {
+	slug := resolveCitySlug(city)
+	pageURL := CityPageURL(city)
+	if pageURL == "" {
+		return Taxonomy{}, fmt.Errorf("unknown city %q: no imot.bg city slug is known for it", city)
+	}
+	html, err := c.FetchPage(pageURL)
+	if err != nil {
+		return Taxonomy{}, fmt.Errorf("fetching taxonomy page: %w", err)
+	}
+	return ParseTaxonomy(html, TaxonomyParams{City: city, CitySlug: slug, SourceURL: pageURL})
 }
 
 // Search fetches and parses listings from imot.bg.
