@@ -473,18 +473,20 @@ var TypeMap = map[string]string{
 	"хотел":        "hotel",
 	"бизнес имот":  "biznes-imot",
 	"етаж от къща": "etazh-ot-kashta",
-	// Retained for compatibility, but the city page does not advertise this
-	// slug and it must not be used as a completeness partition.
-	"земя": "zemedelska-zemya",
+	// The live sales search form advertises land as "ЗЕМЕДЕЛСКА ЗЕМЯ". Both the
+	// source label and the short legacy name resolve to the same slug.
+	"земя":            "zemedelska-zemya",
+	"земеделска земя": "zemedelska-zemya",
 }
 
-// TaxonomyContractVersion is the version tag on the city-page taxonomy payload.
-// It changes only when the meaning of the payload changes, so a consumer can
-// refuse a shape it does not understand instead of guessing.
+// TaxonomyContractVersion is the version tag on the source search-page taxonomy
+// payload. It changes only when the meaning of the payload changes, so a
+// consumer can refuse a shape it does not understand instead of guessing.
 const TaxonomyContractVersion = "imot-taxonomy-v1"
 
-// Taxonomy is the property-type taxonomy advertised by one imot.bg city page.
-// The slugs come from the page's own navigation, not from this CLI's TypeMap:
+// Taxonomy is the property-type taxonomy advertised by one imot.bg sales
+// search page. The slugs come from the page's own labelled type checkboxes,
+// mapped by the explicit label table in parser.go, not from this CLI's TypeMap:
 // the configured map is what the payload is compared against, so it cannot also
 // be its source. TypeSlugs is always sorted, unique and ASCII; TaxonomyHash is
 // the SHA-256 of those slugs joined by LF, so two runs over the same page agree
@@ -498,10 +500,11 @@ type Taxonomy struct {
 	TaxonomyHash    string   `json:"taxonomy_hash"`
 }
 
-// TaxonomyParams tells ParseTaxonomy which city page it is reading. CitySlug is
-// the URL slug the navigation links must sit under ("grad-sofiya"); SourceURL is
-// the fetched page URL, or the local file path for the offline parse, and is
-// recorded verbatim as provenance.
+// TaxonomyParams tells ParseTaxonomy which city's search page it is reading.
+// City is the Bulgarian city or oblast name whose option must be selected in
+// the form's location select; CitySlug is the URL slug of that page
+// ("grad-sofiya"). SourceURL is the fetched page URL, or the local file path
+// for the offline parse, and is recorded verbatim as provenance.
 type TaxonomyParams struct {
 	City      string
 	CitySlug  string

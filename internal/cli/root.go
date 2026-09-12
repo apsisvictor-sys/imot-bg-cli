@@ -267,19 +267,19 @@ func emitDetailError(err error) error {
 func newTaxonomyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "taxonomy",
-		Short: "Report the property-type taxonomy advertised by a city page",
-		Long: "Reads one imot.bg city page and prints the property-type slugs its own navigation advertises, as " +
+		Short: "Report the property-type taxonomy advertised by the sales search form",
+		Long: "Reads one imot.bg sales search page and prints the property-type slugs its type filter advertises, as " +
 			"{contract_version, city, source_url, observed_at, type_slugs, taxonomy_hash}. The hash is the SHA-256 " +
 			"of the sorted unique slugs joined by LF, so two readings of the same page agree.\n\n" +
-			"With --file it parses a saved, correctly decoded city page and makes no network request. A page that " +
-			"is not a recognized city page for --city (challenge, block page, other city, moved navigation) exits " +
-			"non-zero instead of printing an empty taxonomy.",
+			"With --file it parses a saved, correctly decoded search page and makes no network request. A page that " +
+			"is not the recognized search form for --city (challenge, block page, another city selected, renamed " +
+			"form, unmapped or missing type label) exits non-zero instead of printing an incomplete taxonomy.",
 		Args: cobra.NoArgs,
 		RunE: runTaxonomy,
 	}
 	cmd.Flags().String("city", "", "City name (Bulgarian), e.g. София")
 	cmd.Flags().Bool("json", true, "JSON output (default true; JSON is the only supported shape)")
-	cmd.Flags().String("file", "", "Parse a saved city-page HTML file instead of fetching live (use - for stdin)")
+	cmd.Flags().String("file", "", "Parse a saved sales-search HTML file instead of fetching live (use - for stdin)")
 	return cmd
 }
 

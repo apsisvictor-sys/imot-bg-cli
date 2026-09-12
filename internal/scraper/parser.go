@@ -38,7 +38,7 @@ var (
 	// Detail page patterns
 	reDetailText        = regexp.MustCompile(`(?s)class="text"[^>]*>(.*?)</div>`)
 	reDetailParams      = regexp.MustCompile(`class="params"[^>]*>(.*?)</div>`)
-	reDetailPhone       = regexp.MustCompile(`(?s)class="phone[^>]*"[^>]*>(.*?)</div>`)
+	reDetailPhone       = regexp.MustCompile(`(?s)class="phone[^"]*"[^>]*>(.*?)</div>`)
 	reDetailAgencyURL   = regexp.MustCompile(`(?s)class="url"[^>]*>(.*?)</div>`)
 	reDetailOGURL       = regexp.MustCompile(`property="og:url" content="([^"]+)"`)
 	reDetailPhoto       = regexp.MustCompile(`property="og:image"\s+content="([^"]+)"`)
@@ -64,16 +64,19 @@ var (
 	reChallengePage = regexp.MustCompile(`(?i)(cf-chl|__cf_chl|challenge-platform|cf_chl_opt|cf_chl_tk|just a moment|checking your browser|enable javascript and cookies|attention required|g-recaptcha|hcaptcha|recaptcha/api|достъпът е ограничен)`)
 	reRemovedNotice = regexp.MustCompile(`(?i)(обявата не е намерена|обявата е изтрита|обявата е премахната|обявата е свалена|не съществува такава обява)`)
 
-	// City-page taxonomy navigation. The city page advertises its property-type
-	// partitions in a dedicated navigation block; neighbourhood links sit
-	// outside it, so the block boundary is what separates a type slug from a
-	// place slug — their URLs are otherwise the same shape. A missing or renamed
-	// block is a loud failure, never an empty taxonomy.
-	reTaxonomyNavBlock   = regexp.MustCompile(`(?is)<(?:div|ul|ol|nav|section|table)[^>]*(?:class|id)\s*=\s*["'][^"']*(?:typelist|type-list|typeslist|propertytypes|property-types|vidove|vid-imot|tipove|tip-imot)[^"']*["'][^>]*>(.*?)</(?:div|ul|ol|nav|section|table)>`)
-	reTaxonomyTypeSelect = regexp.MustCompile(`(?is)<select[^>]*(?:name|id)\s*=\s*["'][^"']*type[^"']*["'][^>]*>(.*?)</select>`)
-	reHTMLAnchorHref     = regexp.MustCompile(`(?is)<a[^>]*\bhref\s*=\s*["']([^"']+)["']`)
-	reHTMLOptionValue    = regexp.MustCompile(`(?is)<option[^>]*\bvalue\s*=\s*["']([^"']+)["']`)
-	reASCIIPropertySlug  = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	// Sales search-form taxonomy. The search page names each property type as a
+	// labelled checkbox; the results page's per-type links are mixed with
+	// neighbourhood links of the same URL shape and cannot separate them. The
+	// form's own `vigroupsjs` marker proves the type filter is present, and its
+	// `f38` location select proves which city's page this is. A missing or
+	// renamed block is a loud failure, never an empty taxonomy.
+	reTaxonomyGroupMarker  = regexp.MustCompile(`(?is)\bid\s*=\s*["']vigroupsjs["']`)
+	reTaxonomyCitySelect   = regexp.MustCompile(`(?is)<select[^>]*\bname\s*=\s*["']f38["'][^>]*>(.*?)</select>`)
+	reTaxonomyOptionTag    = regexp.MustCompile(`(?is)<option\b([^>]*)>`)
+	reTaxonomySelectedAttr = regexp.MustCompile(`(?is)\bselected\b`)
+	reTaxonomyValueAttr    = regexp.MustCompile(`(?is)\bvalue\s*=\s*["']([^"']*)["']`)
+	reTaxonomyTypeLabel    = regexp.MustCompile(`(?is)<label[^>]*>\s*<input[^>]*\bid\s*=\s*["']vi[0-9]+["'][^>]*>(.*?)</label>`)
+	reTaxonomyTypeID       = regexp.MustCompile(`(?is)\bid\s*=\s*["']vi[0-9]+["']`)
 )
 
 // maxUnknownTypeSamples bounds the unrecognized-type sample list so an unknown
@@ -662,47 +665,109 @@ func ParseSearchPage(html, source string) SearchResult {
 
 // Taxonomy extraction -------------------------------------------------------
 
-// ParseTaxonomy reads one city page's advertised property-type taxonomy. It is
-// offline: html is the already-decoded page and no request is made.
+// taxonomyLabelSlugs maps each visible label of the imot.bg sales search
+// form's property-type checkboxes to the ASCII slug this CLI addresses that
+// type by. The label is the only name the source gives a type, so this map is
+// the taxonomy vocabulary: a label the source adds, renames or drops must be
+// reconciled here before a payload is published, because an unmapped label
+// means the advertised vocabulary is no longer fully represented.
 //
-// The page must prove it is a city page for params.CitySlug by carrying a
-// recognized type navigation block (or type select) with at least two
-// city-scope type links. A challenge page, a block page, a page for another
-// city or a page whose navigation moved therefore fails with an error. An empty
-// type list is never returned: unknown page kind cannot be read as "no types".
+// Keys are in the normalized form taxonomyLabelKey produces: HTML entities
+// decoded, single spaces, one space after a comma, uppercase.
+var taxonomyLabelSlugs = map[string]string{
+	"1-СТАЕН":           "ednostaen",
+	"2-СТАЕН":           "dvustaen",
+	"3-СТАЕН":           "tristaen",
+	"4-СТАЕН":           "chetiristaen",
+	"МНОГОСТАЕН":        "mnogostaen",
+	"МЕЗОНЕТ":           "mezonet",
+	"АТЕЛИЕ, ТАВАН":     "atelie-tavan",
+	"ОФИС":              "ofis",
+	"МАГАЗИН":           "magazin",
+	"ЗАВЕДЕНИЕ":         "zavedenie",
+	"СКЛАД":             "sklad",
+	"ХОТЕЛ":             "hotel",
+	"ПРОМ. ПОМЕЩЕНИЕ":   "promishleno-pomeshtenie",
+	"БИЗНЕС ИМОТ":       "biznes-imot",
+	"ЕТАЖ ОТ КЪЩА":      "etazh-ot-kashta",
+	"КЪЩА":              "kashta",
+	"ВИЛА":              "vila",
+	"ПАРЦЕЛ":            "partsel",
+	"ГАРАЖ, ПАРКОМЯСТО": "garazh-parkomyasto",
+	"ЗЕМЕДЕЛСКА ЗЕМЯ":   "zemedelska-zemya",
+}
+
+// ParseTaxonomy reads one sales search page's advertised property-type
+// taxonomy. It is offline: html is the already-decoded page and no request is
+// made.
+//
+// The page is imot.bg's "Търсене в imot.bg - Продава" search form for one city.
+// Each property type is a checkbox labelled with its Bulgarian name, and the
+// city is the single selected option of the form's f38 location select.
+// Neighbourhood links and business-type checkboxes sit in the same page and are
+// deliberately not read: only the labelled type checkboxes are the taxonomy.
+//
+// The page must prove it is the search form for params.City and must advertise
+// the complete known vocabulary. A challenge page, another city's page, a
+// renamed form, an unmapped label or a partial vocabulary therefore fails with
+// an error. An empty or reduced type list is never returned: an unknown page
+// kind cannot be read as "no types", and a partially recognized page cannot be
+// read as the source's taxonomy.
 func ParseTaxonomy(html string, params TaxonomyParams) (Taxonomy, error) {
 	if reChallengePage.MatchString(html) {
-		return Taxonomy{}, fmt.Errorf("taxonomy page is a bot challenge, not a city page")
+		return Taxonomy{}, fmt.Errorf("taxonomy page is a bot challenge, not a city search page")
 	}
+	city := strings.TrimSpace(params.City)
 	citySlug := strings.TrimSpace(params.CitySlug)
 	if citySlug == "" {
-		return Taxonomy{}, fmt.Errorf("taxonomy needs a city slug to recognize its navigation links")
+		return Taxonomy{}, fmt.Errorf("taxonomy needs a city slug to recognize its source page")
+	}
+	if got := resolveCitySlug(city); got != citySlug {
+		return Taxonomy{}, fmt.Errorf("taxonomy city %q does not match city slug %q", params.City, params.CitySlug)
+	}
+	expectedCity, ok := taxonomyCitySelector(city)
+	if !ok {
+		return Taxonomy{}, fmt.Errorf("taxonomy needs a city this CLI knows by name to verify the selected city, got %q", params.City)
+	}
+	if !reTaxonomyGroupMarker.MatchString(html) {
+		return Taxonomy{}, fmt.Errorf("page %q is not the imot.bg type-filter search form", params.SourceURL)
+	}
+	selected, ok := taxonomySelectedCity(html)
+	if !ok {
+		return Taxonomy{}, fmt.Errorf("page %q has no single selected city in its location select", params.SourceURL)
+	}
+	if selected != expectedCity {
+		return Taxonomy{}, fmt.Errorf("page %q selects city %q, expected %q for %q", params.SourceURL, selected, expectedCity, city)
 	}
 
-	var candidates []string
-	for _, block := range reTaxonomyNavBlock.FindAllStringSubmatch(html, -1) {
-		for _, m := range reHTMLAnchorHref.FindAllStringSubmatch(block[1], -1) {
-			if slug, ok := taxonomySlugFromHref(m[1], citySlug); ok {
-				candidates = append(candidates, slug)
-			}
-		}
+	var candidates, unmapped []string
+	matches := reTaxonomyTypeLabel.FindAllStringSubmatch(html, -1)
+	// Every advertised type checkbox must be one of the labelled ones. A type
+	// the source renders outside a label would otherwise be dropped silently.
+	if ids := reTaxonomyTypeID.FindAllString(html, -1); len(ids) != len(matches) {
+		return Taxonomy{}, fmt.Errorf("page %q carries %d type checkbox id(s) but only %d are labelled", params.SourceURL, len(ids), len(matches))
 	}
-	for _, block := range reTaxonomyTypeSelect.FindAllStringSubmatch(html, -1) {
-		for _, m := range reHTMLOptionValue.FindAllStringSubmatch(block[1], -1) {
-			if slug, ok := taxonomySlugFromOption(m[1], citySlug); ok {
-				candidates = append(candidates, slug)
-			}
+	for _, m := range matches {
+		label := taxonomyLabelKey(m[1])
+		slug, ok := taxonomyLabelSlugs[label]
+		if !ok {
+			unmapped = append(unmapped, label)
+			continue
 		}
+		candidates = append(candidates, slug)
+	}
+	if len(unmapped) > 0 {
+		return Taxonomy{}, fmt.Errorf("page %q advertises type label(s) %s that no taxonomy mapping covers", params.SourceURL, strings.Join(boundedLabels(unmapped), ", "))
 	}
 
 	slugs := SortedUniqueTaxonomySlugs(candidates)
-	if len(slugs) < 2 {
-		return Taxonomy{}, fmt.Errorf("city page %q exposes no recognizable type navigation for %q", params.SourceURL, citySlug)
+	if len(slugs) < len(taxonomyLabelSlugs) {
+		return Taxonomy{}, fmt.Errorf("page %q advertises %d of the %d known property types; the source vocabulary changed and must be reconciled", params.SourceURL, len(slugs), len(taxonomyLabelSlugs))
 	}
 
 	return Taxonomy{
 		ContractVersion: TaxonomyContractVersion,
-		City:            params.City,
+		City:            city,
 		SourceURL:       params.SourceURL,
 		ObservedAt:      FormatTimestamp(time.Now().UTC()),
 		TypeSlugs:       slugs,
@@ -710,59 +775,70 @@ func ParseTaxonomy(html string, params TaxonomyParams) (Taxonomy, error) {
 	}, nil
 }
 
-// taxonomySlugFromHref extracts a type slug from a city-scope link such as
-// "//www.imot.bg/obiavi/prodazhbi/grad-sofiya/dvustaen". Links that leave the
-// requested city, point at another category, carry pagination or add extra path
-// segments are not type links.
-func taxonomySlugFromHref(href, citySlug string) (string, bool) {
-	v := strings.TrimSpace(href)
-	if i := strings.IndexAny(v, "?#"); i >= 0 {
-		v = v[:i]
+// taxonomyCitySelector returns the value the search form's f38 location select
+// must have selected for this city: "град <name>" for a city this CLI knows by
+// name, and the already-prefixed name for an oblast.
+func taxonomyCitySelector(city string) (string, bool) {
+	city = strings.TrimSpace(city)
+	if _, ok := CityMap[city]; ok {
+		return "град " + city, true
 	}
-	idx := strings.Index(v, "/obiavi/")
-	if idx < 0 {
-		return "", false
+	if _, ok := OblastMap[city]; ok {
+		return city, true
 	}
-	segs := strings.Split(strings.Trim(v[idx:], "/"), "/")
-	if len(segs) != 4 || segs[0] != "obiavi" || segs[2] != citySlug {
-		return "", false
-	}
-	if segs[1] != "prodazhbi" && segs[1] != "naemi" {
-		return "", false
-	}
-	return normalizeTaxonomySlug(segs[3])
+	return "", false
 }
 
-// taxonomySlugFromOption accepts a type select value, which may be a bare slug
-// or a full city-scope URL.
-func taxonomySlugFromOption(value, citySlug string) (string, bool) {
-	v := strings.TrimSpace(value)
-	if v == "" {
+// taxonomySelectedCity reads the single selected option of the f38 location
+// select. Zero or several selected options prove nothing about which city the
+// page is for, so both fail.
+func taxonomySelectedCity(html string) (string, bool) {
+	block := reTaxonomyCitySelect.FindStringSubmatch(html)
+	if len(block) < 2 {
 		return "", false
 	}
-	if strings.Contains(v, "/") {
-		return taxonomySlugFromHref(v, citySlug)
-	}
-	return normalizeTaxonomySlug(v)
-}
-
-// normalizeTaxonomySlug keeps only a plausible ASCII source slug. The "all"/"vsichki"
-// placeholders a filter select may carry are not types, and pagination is not a
-// type either.
-func normalizeTaxonomySlug(raw string) (string, bool) {
-	slug := strings.ToLower(strings.TrimSpace(raw))
-	if slug == "" || slug == "all" || slug == "vsichki" {
-		return "", false
-	}
-	if strings.HasPrefix(slug, "p-") {
-		if _, err := strconv.Atoi(strings.TrimPrefix(slug, "p-")); err == nil {
+	selected := ""
+	for _, m := range reTaxonomyOptionTag.FindAllStringSubmatch(block[1], -1) {
+		attrs := m[1]
+		if !reTaxonomySelectedAttr.MatchString(attrs) {
+			continue
+		}
+		value := reTaxonomyValueAttr.FindStringSubmatch(attrs)
+		if len(value) < 2 || selected != "" {
 			return "", false
 		}
+		selected = stdhtml.UnescapeString(strings.TrimSpace(value[1]))
 	}
-	if !reASCIIPropertySlug.MatchString(slug) {
-		return "", false
+	return selected, selected != ""
+}
+
+// taxonomyLabelKey normalizes a raw checkbox label to the map key form: HTML
+// entities decoded, one space after a comma, single spaces, uppercase.
+func taxonomyLabelKey(raw string) string {
+	label := stdhtml.UnescapeString(raw)
+	label = strings.ReplaceAll(label, ",", ", ")
+	return strings.ToUpper(strings.Join(strings.Fields(label), " "))
+}
+
+// boundedLabels keeps a failure message actionable without echoing an
+// arbitrarily large page fragment: at most three labels, each at most forty
+// runes.
+func boundedLabels(labels []string) []string {
+	const maxLabels = 3
+	const maxRunes = 40
+	out := make([]string, 0, maxLabels+1)
+	for _, label := range labels {
+		if len(out) == maxLabels {
+			out = append(out, "…")
+			break
+		}
+		runes := []rune(label)
+		if len(runes) > maxRunes {
+			label = string(runes[:maxRunes]) + "…"
+		}
+		out = append(out, label)
 	}
-	return slug, true
+	return out
 }
 
 // SortedUniqueTaxonomySlugs normalizes a raw slug list for the taxonomy payload:
@@ -1180,7 +1256,7 @@ func ParseDetail(html string) DetailListing {
 	seen := make(map[string]bool)
 	phoneBlocks := reDetailPhone.FindAllStringSubmatch(html, -1)
 	// Regex to match Bulgarian phone-like sequences
-	rePhoneDigits := regexp.MustCompile(`(?:\+359|0)\d[\d/\-]*\d`)
+	rePhoneDigits := regexp.MustCompile(`(?:\+359|0)[\d\s/\-]*\d`)
 	for _, m := range phoneBlocks {
 		// Strip all HTML tags first
 		ph := stripTags(m[1])

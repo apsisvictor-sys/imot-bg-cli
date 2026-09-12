@@ -158,7 +158,8 @@ Note: `гараж` and `паркомясто` are separate subtypes on imot.bg b
 | Bulgarian | CLI flag | URL slug |
 |-----------|----------|----------|
 | парцел | `"парцел"` | `partsel` |
-| земя | `"земя"` | `zemedelska-zemya` (legacy, not advertised on city pages) |
+| земеделска земя | `"земеделска земя"` | `zemedelska-zemya` |
+| земя | `"земя"` | `zemedelska-zemya` (short legacy alias) |
 
 ## Data Schema
 

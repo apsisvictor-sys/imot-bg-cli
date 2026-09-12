@@ -22,6 +22,7 @@ import (
 
 const (
 	BaseURL         = "https://www.imot.bg/obiavi"
+	SearchBaseURL   = "https://www.imot.bg/search"
 	FormURL         = "https://www.imot.bg/pcgi/imot.cgi"
 	UserAgent       = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 	SearchPageDelay = 3000 * time.Millisecond // 3s between search result pages
@@ -458,18 +459,21 @@ func CitySlug(city string) string {
 	return resolveCitySlug(city)
 }
 
-// CityPageURL returns the sales city page URL whose navigation advertises the
-// property-type taxonomy, or "" for an unknown city.
+// CityPageURL returns the sales search page whose type filter advertises the
+// property-type taxonomy, or "" for an unknown city. The search form, not the
+// results page, is the source: the results page mixes type links with
+// neighbourhood links of the same URL shape, while the form labels every type
+// as a checkbox.
 func CityPageURL(city string) string {
 	slug := resolveCitySlug(city)
 	if slug == "" {
 		return ""
 	}
-	return BaseURL + "/prodazhbi/" + slug
+	return SearchBaseURL + "/prodazhbi/" + slug
 }
 
-// FetchTaxonomy fetches the city page and reads its advertised type taxonomy.
-// It is the live twin of ParseTaxonomy and makes exactly one request.
+// FetchTaxonomy fetches the city search page and reads its advertised type
+// taxonomy. It is the live twin of ParseTaxonomy and makes exactly one request.
 func (c *Client) FetchTaxonomy(city string) (Taxonomy, error) {
 	slug := resolveCitySlug(city)
 	pageURL := CityPageURL(city)

@@ -74,21 +74,22 @@ func TestSearchWithMetaIncludesResolvedNeighborhoodSlug(t *testing.T) {
 }
 
 func TestTypeMapIncludesSourceBackedCityTypes(t *testing.T) {
-	expected := map[string]string{
-		"ателие": "atelie-tavan",
-		"парцел": "partsel",
-		"промишлено помещение": "promishleno-pomeshtenie",
-		"хотел":        "hotel",
-		"бизнес имот":  "biznes-imot",
-		"етаж от къща": "etazh-ot-kashta",
+	expected := []struct{ label, slug string }{
+		{"ателие", "atelie-tavan"},
+		{"парцел", "partsel"},
+		{"промишлено помещение", "promishleno-pomeshtenie"},
+		{"хотел", "hotel"},
+		{"бизнес имот", "biznes-imot"},
+		{"етаж от къща", "etazh-ot-kashta"},
+		{"земеделска земя", "zemedelska-zemya"},
 	}
-	for name, slug := range expected {
-		if got := TypeMap[name]; got != slug {
-			t.Errorf("TypeMap[%q] = %q, want %q", name, got, slug)
+	for _, want := range expected {
+		if got := TypeMap[want.label]; got != want.slug {
+			t.Errorf("TypeMap[%q] = %q, want %q", want.label, got, want.slug)
 		}
 	}
 	if _, ok := TypeMap["земя"]; !ok {
-		t.Fatal("legacy земя mapping should remain available to callers, even though it is not a completeness partition")
+		t.Fatal("the short земя alias should remain available to callers")
 	}
 }
 
