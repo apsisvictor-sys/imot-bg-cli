@@ -3,6 +3,16 @@
 Date: 2026-09-10  
 Status: recommendation for approval; no implementation or deployment changes made.
 
+Update 2026-09-13 (Phase U1): the MCP now serves in-scope Sofia sales from the
+shared Market Radar store, applies price/area filters on both the Radar and
+fallback paths, keys its cache by projection, serving mode and pagination, never
+stores a truncated listing array, and labels every answer with `source`,
+`coverage`, `readiness` and `observed_at`. Rentals and out-of-catalogue areas
+keep the labelled live fallback. The F1 findings about unapplied budget/area
+filters, truncation before caching and cache keys without the display limit are
+addressed for the MCP; multi-neighbourhood fetch in one call, deterministic
+continuation, ID dedup and unknown-city validation remain open.
+
 ## D1. Recommended experience and boundary
 
 Keep the existing three public tools: `search_listings`, `get_listing`, and `list_supported_filters`. Expand their contracts around a client brief rather than adding separate tools for every search variation.

@@ -27,6 +27,10 @@ func TestLiveSearchAndDetail(t *testing.T) {
 	t.Setenv("IMOT_MCP_DB", filepath.Join(t.TempDir(), "live-cache.db"))
 	t.Setenv("IMOT_MCP_MIN_SPACING", "1500ms")
 	t.Setenv("IMOT_MCP_ADDR", "127.0.0.1:18099")
+	// This is the live imot.bg smoke test: it must exercise the legacy source
+	// path, not a Radar answer that happens to be configured in the ambient
+	// environment.
+	t.Setenv("IMOT_MCP_RADAR_DSN", "")
 
 	cfg, err := LoadConfig()
 	if err != nil {

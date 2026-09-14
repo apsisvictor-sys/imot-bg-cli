@@ -157,7 +157,10 @@ func (c *Cache) PutDetail(listingID string, payload []byte) error {
 	return nil
 }
 
-// RecordUsage logs one tool call for quota accounting and pilot analysis.
+// RecordUsage logs one tool call for quota accounting and pilot analysis. The
+// cacheHit flag means "served without a live source fetch": it is true for MCP
+// cache hits and for Radar reads, and false only for an imot.bg request. The
+// column keeps its original name for compatibility.
 func (c *Cache) RecordUsage(identity, tool string, cacheHit bool) error {
 	hit := 0
 	if cacheHit {

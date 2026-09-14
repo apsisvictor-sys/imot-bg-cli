@@ -25,6 +25,7 @@ func testConfig(t *testing.T) Config {
 	t.Setenv("IMOT_MCP_TOKENS", "pilot:"+testSecret)
 	t.Setenv("IMOT_MCP_DB", filepath.Join(t.TempDir(), "cache.db"))
 	t.Setenv("IMOT_MCP_MIN_SPACING", "1ms")
+	t.Setenv("IMOT_MCP_RADAR_DSN", "")
 	loaded, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
@@ -80,19 +81,19 @@ func TestParseTokens(t *testing.T) {
 func TestSearchKeyIgnoresCaseAndSpacing(t *testing.T) {
 	base := scraper.SearchParams{City: "София", Neighborhood: "Лозенец", Type: "2-стаен", Pages: 1}
 	same := scraper.SearchParams{City: "София", Neighborhood: "  лозенец ", Type: "2-стаен", Pages: 1}
-	if searchKey(base) != searchKey(same) {
+	if searchKey("legacy", base, 40) != searchKey("legacy", same, 40) {
 		t.Fatal("neighborhood case and spacing must not change the cache key")
 	}
 
 	other := base
 	other.Pages = 2
-	if searchKey(base) == searchKey(other) {
+	if searchKey("legacy", base, 40) == searchKey("legacy", other, 40) {
 		t.Fatal("a different page count must produce a different cache key")
 	}
 
 	rented := base
 	rented.Rent = true
-	if searchKey(base) == searchKey(rented) {
+	if searchKey("legacy", base, 40) == searchKey("legacy", rented, 40) {
 		t.Fatal("rent and sale searches must not share a cache key")
 	}
 }
@@ -104,7 +105,7 @@ func TestCacheRespectsTTL(t *testing.T) {
 	}
 	defer cache.Close()
 
-	key := searchKey(scraper.SearchParams{City: "София"})
+	key := searchKey("legacy", scraper.SearchParams{City: "София"}, 40)
 	if err := cache.PutSearch(key, []byte(`{"ok":true}`), 3); err != nil {
 		t.Fatalf("PutSearch: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestAuthorizeLiveEnforcesBothBudgets(t *testing.T) {
 
 	cfg.LiveQuotaPerWindow = 2
 	cfg.GlobalQuotaPerWindow = 100
-	svc := newService(cfg, cache, NewLimiter(1, 0), "pilot", testLogger())
+	svc := newService(cfg, cache, NewLimiter(1, 0), nil, "pilot", testLogger())
 
 	if err := svc.authorizeLive(ToolSearchListings); err != nil {
 		t.Fatalf("first live call should be allowed: %v", err)
@@ -189,13 +190,13 @@ func TestAuthorizeLiveEnforcesBothBudgets(t *testing.T) {
 	}
 
 	// A different identity still has room while the global budget holds.
-	other := newService(cfg, cache, NewLimiter(1, 0), "second", testLogger())
+	other := newService(cfg, cache, NewLimiter(1, 0), nil, "second", testLogger())
 	if err := other.authorizeLive(ToolSearchListings); err != nil {
 		t.Fatalf("a second identity should still be allowed: %v", err)
 	}
 
 	cfg.GlobalQuotaPerWindow = 1
-	global := newService(cfg, cache, NewLimiter(1, 0), "third", testLogger())
+	global := newService(cfg, cache, NewLimiter(1, 0), nil, "third", testLogger())
 	if err := global.authorizeLive(ToolSearchListings); err == nil {
 		t.Fatal("expected the shared budget to be exhausted")
 	}
@@ -265,11 +266,11 @@ func TestSearchListingsServesCachedPayloadWithoutScraping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := cache.PutSearch(searchKey(params), payload, len(cached.Listings)); err != nil {
+	if err := cache.PutSearch(searchKey("legacy", params, cfg.DefaultLimit), payload, len(cached.Listings)); err != nil {
 		t.Fatalf("PutSearch: %v", err)
 	}
 
-	svc := newService(cfg, cache, NewLimiter(1, 0), "pilot", testLogger())
+	svc := newService(cfg, cache, NewLimiter(1, 0), nil, "pilot", testLogger())
 	out, err := svc.SearchListings(context.Background(), SearchListingsInput{
 		City:         "софия", // lower case must still hit the same cache entry
 		Neighborhood: "Лозенец",

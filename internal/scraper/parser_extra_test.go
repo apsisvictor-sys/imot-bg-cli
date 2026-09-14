@@ -101,18 +101,52 @@ func TestParseDetailExtractsFeaturesBrokerPublishedVat(t *testing.T) {
 	requireDetailEvidence(t, d, DetailKeyFloor, DetailPresenceUnknown, DetailReasonNoSelectorHit)
 }
 
+func TestDetailParamsPreserveTypeSpecificLabels(t *testing.T) {
+	html := `
+<html><head><meta property="og:url" content="//www.imot.bg/obiava-1r164785405040282-prodava-partsel-grad-sofiya-gotse-delchev"></head>
+<body><div class="ad2023"><div class="left">
+  <div class="params">Площ: 3577 кв.м, Агенция, Регулация: ДА, Ток: ДА, Вода: ДА,</div>
+  <div class="moreInfo"><div class="text">Описание</div></div>
+  <div class="carExtri"><span class="Title">Особености</span><div class="items"></div></div>
+</div></div></body></html>`
+	detail, err := ParseDetailPage(html, "https://www.imot.bg/obiava-1r164785405040282-prodava-partsel-grad-sofiya-gotse-delchev")
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if detail.SourceParams["Регулация"] != "ДА" || detail.SourceParams["Ток"] != "ДА" || detail.SourceParams["Вода"] != "ДА" {
+		t.Fatalf("type-specific params were not preserved: %#v", detail.SourceParams)
+	}
+}
+
+func TestUniquePhotoURLsAcceptsLegacyPicGallery(t *testing.T) {
+	html := `
+<div id="rezon-gallery">
+  <img class="carouselimg owl-lazy" data-src-gallery="//imotstatic1.focus.bg/imot/photosimotbg/1/629//big/1d154730702808629_1.pic">
+</div>
+`
+	photos := uniquePhotoURLs(html)
+	if len(photos) != 1 || photos[0] != "https://imotstatic1.focus.bg/imot/photosimotbg/1/629/big/1d154730702808629_1.pic" {
+		t.Fatalf("legacy .pic gallery was not accepted: %#v", photos)
+	}
+}
+
 func TestUniquePhotoURLsDedupsSizeVariants(t *testing.T) {
 	html := `
 <meta property="og:image" content="//cdn3.focus.bg/imot/photosimotbg/2/768//big/2c178773245606768_e1.jpg">
-<img src="//cdn3.focus.bg/imot/photosimotbg/2/768//big1/2c178773245606768_e1.jpg">
-<img src="//cdn3.focus.bg/imot/photosimotbg/2/768//big1/2c178773245606768_mu.jpg">
+<div id="rezon-gallery">
+  <img data-src-gallery="//cdn3.focus.bg/imot/photosimotbg/2/768//big1/2c178773245606768_e1.jpg">
+  <img data-src-gallery="//cdn3.focus.bg/imot/photosimotbg/2/768//big1/2c178773245606768_mu.jpg">
+</div>
 `
 	photos := uniquePhotoURLs(html)
-	if len(photos) != 2 {
-		t.Fatalf("expected 2 unique photos, got %d: %#v", len(photos), photos)
+	if len(photos) != 3 {
+		t.Fatalf("expected two unique photos and one retained fallback variant, got %d: %#v", len(photos), photos)
 	}
-	if !strings.Contains(photos[0], "/big/2c178773245606768_e1.jpg") {
-		t.Fatalf("expected /big/ variant preferred, got %q", photos[0])
+	if !strings.Contains(photos[0], "/big1/2c178773245606768_e1.jpg") {
+		t.Fatalf("expected /big1/ gallery variant preferred, got %q", photos[0])
+	}
+	if !strings.Contains(photos[1], "/big/2c178773245606768_e1.jpg") {
+		t.Fatalf("expected /big/ social variant retained as fallback, got %q", photos[1])
 	}
 }
 

@@ -211,6 +211,10 @@ type DetailListing struct {
 	BrokerPhone      string   `json:"broker_phone,omitempty"`  // broker direct phone
 	AgencyOffice     string   `json:"agency_office,omitempty"` // office address, e.g. "ул. Отец Паисий 15, ет. 3, офис 9"
 	VatNote          string   `json:"vat_note,omitempty"`      // e.g. "Не се начислява ДДС"
+	// Additional labelled values from the advert's params line, such as
+	// Регулация, Ток and Вода. The established flat fields remain unchanged;
+	// this map preserves type-specific facts without inventing DB columns.
+	SourceParams map[string]string `json:"source_params,omitempty"`
 
 	// Additive presence metadata (imot-detail-v2). ContractVersion tags the
 	// payload; AdvertID is the page's independently parsed 15-digit advert

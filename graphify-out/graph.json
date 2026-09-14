@@ -1,0 +1,3414 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "label": "view.py",
+      "file_type": "code",
+      "source_file": "view.py",
+      "source_location": "L1",
+      "id": "view_py",
+      "community": 8,
+      "norm_label": "view.py"
+    },
+    {
+      "label": "Handler",
+      "file_type": "code",
+      "source_file": "view.py",
+      "source_location": "L202",
+      "id": "imot_cli_view_handler",
+      "community": 8,
+      "norm_label": "handler"
+    },
+    {
+      "label": "BaseHTTPRequestHandler",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "id": "basehttprequesthandler",
+      "community": 8,
+      "norm_label": "basehttprequesthandler"
+    },
+    {
+      "label": ".do_GET()",
+      "file_type": "code",
+      "source_file": "view.py",
+      "source_location": "L203",
+      "id": "imot_cli_view_handler_do_get",
+      "community": 8,
+      "norm_label": ".do_get()"
+    },
+    {
+      "label": ".log_message()",
+      "file_type": "code",
+      "source_file": "view.py",
+      "source_location": "L236",
+      "id": "imot_cli_view_handler_log_message",
+      "community": 8,
+      "norm_label": ".log_message()"
+    },
+    {
+      "label": "scraper.go",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L1",
+      "id": "internal_scraper_scraper_go",
+      "community": 4,
+      "norm_label": "scraper.go"
+    },
+    {
+      "label": "Client",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L28",
+      "id": "scraper_client",
+      "community": 4,
+      "norm_label": "client"
+    },
+    {
+      "label": "NewClient()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L33",
+      "id": "scraper_scraper_newclient",
+      "community": 0,
+      "norm_label": "newclient()"
+    },
+    {
+      "label": "jitteredSleep()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L42",
+      "id": "scraper_scraper_jitteredsleep",
+      "community": 4,
+      "norm_label": "jitteredsleep()"
+    },
+    {
+      "label": ".FetchPage()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L48",
+      "id": "scraper_client_fetchpage",
+      "community": 4,
+      "norm_label": ".fetchpage()"
+    },
+    {
+      "label": ".FetchDetail()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L80",
+      "id": "scraper_client_fetchdetail",
+      "community": 4,
+      "norm_label": ".fetchdetail()"
+    },
+    {
+      "label": ".resolveNeighborhoodSlug()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L98",
+      "id": "scraper_client_resolveneighborhoodslug",
+      "community": 4,
+      "norm_label": ".resolveneighborhoodslug()"
+    },
+    {
+      "label": ".resolveSlugViaPost()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L128",
+      "id": "scraper_client_resolveslugviapost",
+      "community": 4,
+      "norm_label": ".resolveslugviapost()"
+    },
+    {
+      "label": "extractNeighborhoodFromURL()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L186",
+      "id": "scraper_scraper_extractneighborhoodfromurl",
+      "community": 4,
+      "norm_label": "extractneighborhoodfromurl()"
+    },
+    {
+      "label": "buildURLWithSlug()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L228",
+      "id": "scraper_scraper_buildurlwithslug",
+      "community": 4,
+      "norm_label": "buildurlwithslug()"
+    },
+    {
+      "label": "BuildURL()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L273",
+      "id": "scraper_scraper_buildurl",
+      "community": 4,
+      "norm_label": "buildurl()"
+    },
+    {
+      "label": "resolveCitySlug()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L277",
+      "id": "scraper_scraper_resolvecityslug",
+      "community": 4,
+      "norm_label": "resolvecityslug()"
+    },
+    {
+      "label": "resolveTypeSlug()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L287",
+      "id": "scraper_scraper_resolvetypeslug",
+      "community": 4,
+      "norm_label": "resolvetypeslug()"
+    },
+    {
+      "label": ".Search()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L297",
+      "id": "scraper_client_search",
+      "community": 4,
+      "norm_label": ".search()"
+    },
+    {
+      "label": ".SearchWithMeta()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L306",
+      "id": "scraper_client_searchwithmeta",
+      "community": 4,
+      "norm_label": ".searchwithmeta()"
+    },
+    {
+      "label": "parser.go",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L1",
+      "id": "internal_scraper_parser_go",
+      "community": 2,
+      "norm_label": "parser.go"
+    },
+    {
+      "label": "ParseListings()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L47",
+      "id": "scraper_parser_parselistings",
+      "community": 2,
+      "norm_label": "parselistings()"
+    },
+    {
+      "label": "parseListingBlock()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L74",
+      "id": "scraper_parser_parselistingblock",
+      "community": 2,
+      "norm_label": "parselistingblock()"
+    },
+    {
+      "label": "extractType()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L142",
+      "id": "scraper_parser_extracttype",
+      "community": 2,
+      "norm_label": "extracttype()"
+    },
+    {
+      "label": "extractInfo()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L185",
+      "id": "scraper_parser_extractinfo",
+      "community": 2,
+      "norm_label": "extractinfo()"
+    },
+    {
+      "label": "parseInfo()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L200",
+      "id": "scraper_parser_parseinfo",
+      "community": 2,
+      "norm_label": "parseinfo()"
+    },
+    {
+      "label": "parsePrice()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L317",
+      "id": "scraper_parser_parseprice",
+      "community": 2,
+      "norm_label": "parseprice()"
+    },
+    {
+      "label": "stripTags()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L332",
+      "id": "scraper_parser_striptags",
+      "community": 2,
+      "norm_label": "striptags()"
+    },
+    {
+      "label": "generateHash()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L351",
+      "id": "scraper_parser_generatehash",
+      "community": 2,
+      "norm_label": "generatehash()"
+    },
+    {
+      "label": "parseBulgarianMonth()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L357",
+      "id": "scraper_parser_parsebulgarianmonth",
+      "community": 2,
+      "norm_label": "parsebulgarianmonth()"
+    },
+    {
+      "label": "ParseTotalCount()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L390",
+      "id": "scraper_parser_parsetotalcount",
+      "community": 5,
+      "norm_label": "parsetotalcount()"
+    },
+    {
+      "label": "ParseDetail()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L403",
+      "id": "scraper_parser_parsedetail",
+      "community": 2,
+      "norm_label": "parsedetail()"
+    },
+    {
+      "label": "normalizePhotoURL()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L575",
+      "id": "scraper_parser_normalizephotourl",
+      "community": 2,
+      "norm_label": "normalizephotourl()"
+    },
+    {
+      "label": "uniquePhotoURLs()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L593",
+      "id": "scraper_parser_uniquephotourls",
+      "community": 2,
+      "norm_label": "uniquephotourls()"
+    },
+    {
+      "label": "scraper_test.go",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L1",
+      "id": "internal_scraper_scraper_test_go",
+      "community": 5,
+      "norm_label": "scraper_test.go"
+    },
+    {
+      "label": "roundTripFunc",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L14",
+      "id": "scraper_roundtripfunc",
+      "community": 5,
+      "norm_label": "roundtripfunc"
+    },
+    {
+      "label": ".RoundTrip()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L16",
+      "id": "scraper_roundtripfunc_roundtrip",
+      "community": 5,
+      "norm_label": ".roundtrip()"
+    },
+    {
+      "label": "htmlResponse()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L20",
+      "id": "scraper_scraper_test_htmlresponse",
+      "community": 5,
+      "norm_label": "htmlresponse()"
+    },
+    {
+      "label": "TestSearchWithMetaMarksPartialOnLaterPageFailure()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L32",
+      "id": "scraper_scraper_test_testsearchwithmetamarkspartialonlaterpagefailure",
+      "community": 5,
+      "norm_label": "testsearchwithmetamarkspartialonlaterpagefailure()"
+    },
+    {
+      "label": "TestSearchWithMetaIncludesResolvedNeighborhoodSlug()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L58",
+      "id": "scraper_scraper_test_testsearchwithmetaincludesresolvedneighborhoodslug",
+      "community": 5,
+      "norm_label": "testsearchwithmetaincludesresolvedneighborhoodslug()"
+    },
+    {
+      "label": "TestTypeMapIncludesAtelie()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L75",
+      "id": "scraper_scraper_test_testtypemapincludesatelie",
+      "community": 5,
+      "norm_label": "testtypemapincludesatelie()"
+    },
+    {
+      "label": "TestParseTotalCount()",
+      "file_type": "code",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L81",
+      "id": "scraper_scraper_test_testparsetotalcount",
+      "community": 5,
+      "norm_label": "testparsetotalcount()"
+    },
+    {
+      "label": "types.go",
+      "file_type": "code",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L1",
+      "id": "internal_scraper_types_go",
+      "community": 7,
+      "norm_label": "types.go"
+    },
+    {
+      "label": "DetailListing",
+      "file_type": "code",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L8",
+      "id": "scraper_detaillisting",
+      "community": 7,
+      "norm_label": "detaillisting"
+    },
+    {
+      "label": "Listing",
+      "file_type": "code",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L26",
+      "id": "scraper_listing",
+      "community": 7,
+      "norm_label": "listing"
+    },
+    {
+      "label": "SearchError",
+      "file_type": "code",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L46",
+      "id": "scraper_searcherror",
+      "community": 7,
+      "norm_label": "searcherror"
+    },
+    {
+      "label": "SearchResult",
+      "file_type": "code",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L53",
+      "id": "scraper_searchresult",
+      "community": 7,
+      "norm_label": "searchresult"
+    },
+    {
+      "label": "SearchParams",
+      "file_type": "code",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L149",
+      "id": "scraper_searchparams",
+      "community": 7,
+      "norm_label": "searchparams"
+    },
+    {
+      "label": "FormatTimestamp()",
+      "file_type": "code",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L162",
+      "id": "scraper_types_formattimestamp",
+      "community": 7,
+      "norm_label": "formattimestamp()"
+    },
+    {
+      "label": "parser_photo_test.go",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser_photo_test.go",
+      "source_location": "L1",
+      "id": "internal_scraper_parser_photo_test_go",
+      "community": 2,
+      "norm_label": "parser_photo_test.go"
+    },
+    {
+      "label": "TestParseDetailExtractsOrderedPhotoURLs()",
+      "file_type": "code",
+      "source_file": "internal/scraper/parser_photo_test.go",
+      "source_location": "L5",
+      "id": "scraper_parser_photo_test_testparsedetailextractsorderedphotourls",
+      "community": 2,
+      "norm_label": "testparsedetailextractsorderedphotourls()"
+    },
+    {
+      "label": "translit_test.go",
+      "file_type": "code",
+      "source_file": "internal/translit/translit_test.go",
+      "source_location": "L1",
+      "id": "internal_translit_translit_test_go",
+      "community": 9,
+      "norm_label": "translit_test.go"
+    },
+    {
+      "label": "TestNeighborhoodSlugs()",
+      "file_type": "code",
+      "source_file": "internal/translit/translit_test.go",
+      "source_location": "L8",
+      "id": "translit_translit_test_testneighborhoodslugs",
+      "community": 9,
+      "norm_label": "testneighborhoodslugs()"
+    },
+    {
+      "label": "translit.go",
+      "file_type": "code",
+      "source_file": "internal/translit/translit.go",
+      "source_location": "L1",
+      "id": "internal_translit_translit_go",
+      "community": 9,
+      "norm_label": "translit.go"
+    },
+    {
+      "label": "ToSlug()",
+      "file_type": "code",
+      "source_file": "internal/translit/translit.go",
+      "source_location": "L20",
+      "id": "translit_translit_toslug",
+      "community": 9,
+      "norm_label": "toslug()"
+    },
+    {
+      "label": "NormalizeCity()",
+      "file_type": "code",
+      "source_file": "internal/translit/translit.go",
+      "source_location": "L41",
+      "id": "translit_translit_normalizecity",
+      "community": 9,
+      "norm_label": "normalizecity()"
+    },
+    {
+      "label": "root.go",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L1",
+      "id": "internal_cli_root_go",
+      "community": 0,
+      "norm_label": "root.go"
+    },
+    {
+      "label": "addSearchFlags()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L38",
+      "id": "cli_root_addsearchflags",
+      "community": 0,
+      "norm_label": "addsearchflags()"
+    },
+    {
+      "label": "NewRootCommand()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L55",
+      "id": "cli_root_newrootcommand",
+      "community": 0,
+      "norm_label": "newrootcommand()"
+    },
+    {
+      "label": "newSearchCmd()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L74",
+      "id": "cli_root_newsearchcmd",
+      "community": 0,
+      "norm_label": "newsearchcmd()"
+    },
+    {
+      "label": "newSyncCmd()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L85",
+      "id": "cli_root_newsynccmd",
+      "community": 0,
+      "norm_label": "newsynccmd()"
+    },
+    {
+      "label": "newLocalCmd()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L96",
+      "id": "cli_root_newlocalcmd",
+      "community": 0,
+      "norm_label": "newlocalcmd()"
+    },
+    {
+      "label": "newStatsCmd()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L107",
+      "id": "cli_root_newstatscmd",
+      "community": 0,
+      "norm_label": "newstatscmd()"
+    },
+    {
+      "label": "newSQLCmd()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L119",
+      "id": "cli_root_newsqlcmd",
+      "community": 0,
+      "norm_label": "newsqlcmd()"
+    },
+    {
+      "label": "newWatchCmd()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L130",
+      "id": "cli_root_newwatchcmd",
+      "community": 0,
+      "norm_label": "newwatchcmd()"
+    },
+    {
+      "label": "newCitiesCmd()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L142",
+      "id": "cli_root_newcitiescmd",
+      "community": 0,
+      "norm_label": "newcitiescmd()"
+    },
+    {
+      "label": "newDetailCmd()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L151",
+      "id": "cli_root_newdetailcmd",
+      "community": 0,
+      "norm_label": "newdetailcmd()"
+    },
+    {
+      "label": "runDetail()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L163",
+      "id": "cli_root_rundetail",
+      "community": 0,
+      "norm_label": "rundetail()"
+    },
+    {
+      "label": "resolveCity()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L181",
+      "id": "cli_root_resolvecity",
+      "community": 0,
+      "norm_label": "resolvecity()"
+    },
+    {
+      "label": "runSearch()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L192",
+      "id": "cli_root_runsearch",
+      "community": 0,
+      "norm_label": "runsearch()"
+    },
+    {
+      "label": "runSync()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L228",
+      "id": "cli_root_runsync",
+      "community": 0,
+      "norm_label": "runsync()"
+    },
+    {
+      "label": "runLocal()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L274",
+      "id": "cli_root_runlocal",
+      "community": 0,
+      "norm_label": "runlocal()"
+    },
+    {
+      "label": "runStats()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L295",
+      "id": "cli_root_runstats",
+      "community": 0,
+      "norm_label": "runstats()"
+    },
+    {
+      "label": "runSQL()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L351",
+      "id": "cli_root_runsql",
+      "community": 0,
+      "norm_label": "runsql()"
+    },
+    {
+      "label": "runWatch()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L408",
+      "id": "cli_root_runwatch",
+      "community": 0,
+      "norm_label": "runwatch()"
+    },
+    {
+      "label": "runCities()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L485",
+      "id": "cli_root_runcities",
+      "community": 0,
+      "norm_label": "runcities()"
+    },
+    {
+      "label": "filterListings()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L499",
+      "id": "cli_root_filterlistings",
+      "community": 0,
+      "norm_label": "filterlistings()"
+    },
+    {
+      "label": "dedupListings()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L525",
+      "id": "cli_root_deduplistings",
+      "community": 0,
+      "norm_label": "deduplistings()"
+    },
+    {
+      "label": "outputListings()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L537",
+      "id": "cli_root_outputlistings",
+      "community": 0,
+      "norm_label": "outputlistings()"
+    },
+    {
+      "label": "formatListingAgent()",
+      "file_type": "code",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L580",
+      "id": "cli_root_formatlistingagent",
+      "community": 0,
+      "norm_label": "formatlistingagent()"
+    },
+    {
+      "label": "store.go",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L1",
+      "id": "internal_store_store_go",
+      "community": 3,
+      "norm_label": "store.go"
+    },
+    {
+      "label": "Store",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L57",
+      "id": "store_store",
+      "community": 3,
+      "norm_label": "store"
+    },
+    {
+      "label": "New()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L62",
+      "id": "store_store_new",
+      "community": 0,
+      "norm_label": "new()"
+    },
+    {
+      "label": ".Close()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L95",
+      "id": "store_store_close",
+      "community": 3,
+      "norm_label": ".close()"
+    },
+    {
+      "label": ".DB()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L100",
+      "id": "store_store_db",
+      "community": 3,
+      "norm_label": ".db()"
+    },
+    {
+      "label": "dbExecutor",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L104",
+      "id": "store_dbexecutor",
+      "community": 3,
+      "norm_label": "dbexecutor"
+    },
+    {
+      "label": "priceEntry",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L109",
+      "id": "store_priceentry",
+      "community": 3,
+      "norm_label": "priceentry"
+    },
+    {
+      "label": "generateListingHash()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L115",
+      "id": "store_store_generatelistinghash",
+      "community": 3,
+      "norm_label": "generatelistinghash()"
+    },
+    {
+      "label": "appendPriceHistory()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L130",
+      "id": "store_store_appendpricehistory",
+      "community": 3,
+      "norm_label": "appendpricehistory()"
+    },
+    {
+      "label": "upsertListing()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L145",
+      "id": "store_store_upsertlisting",
+      "community": 3,
+      "norm_label": "upsertlisting()"
+    },
+    {
+      "label": ".SyncListings()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L211",
+      "id": "store_store_synclistings",
+      "community": 3,
+      "norm_label": ".synclistings()"
+    },
+    {
+      "label": "insertSyncLog()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L238",
+      "id": "store_store_insertsynclog",
+      "community": 3,
+      "norm_label": "insertsynclog()"
+    },
+    {
+      "label": ".QueryListings()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L252",
+      "id": "store_store_querylistings",
+      "community": 3,
+      "norm_label": ".querylistings()"
+    },
+    {
+      "label": "Stats",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L308",
+      "id": "store_stats",
+      "community": 3,
+      "norm_label": "stats"
+    },
+    {
+      "label": "NeighborhoodStats",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L319",
+      "id": "store_neighborhoodstats",
+      "community": 3,
+      "norm_label": "neighborhoodstats"
+    },
+    {
+      "label": ".GetStats()",
+      "file_type": "code",
+      "source_file": "internal/store/store.go",
+      "source_location": "L326",
+      "id": "store_store_getstats",
+      "community": 3,
+      "norm_label": ".getstats()"
+    },
+    {
+      "label": "store_test.go",
+      "file_type": "code",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L1",
+      "id": "internal_store_store_test_go",
+      "community": 10,
+      "norm_label": "store_test.go"
+    },
+    {
+      "label": "newTestStore()",
+      "file_type": "code",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L11",
+      "id": "store_store_test_newteststore",
+      "community": 10,
+      "norm_label": "newteststore()"
+    },
+    {
+      "label": "TestSyncListingsStoresSameSpecsDifferentFloors()",
+      "file_type": "code",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L21",
+      "id": "store_store_test_testsynclistingsstoressamespecsdifferentfloors",
+      "community": 10,
+      "norm_label": "testsynclistingsstoressamespecsdifferentfloors()"
+    },
+    {
+      "label": "TestUpsertListingPriceHistoryUsesValidJSON()",
+      "file_type": "code",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L45",
+      "id": "store_store_test_testupsertlistingpricehistoryusesvalidjson",
+      "community": 10,
+      "norm_label": "testupsertlistingpricehistoryusesvalidjson()"
+    },
+    {
+      "label": "main.go",
+      "file_type": "code",
+      "source_file": "cmd/imot/main.go",
+      "source_location": "L1",
+      "id": "cmd_imot_main_go",
+      "community": 0,
+      "norm_label": "main.go"
+    },
+    {
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "cmd/imot/main.go",
+      "source_location": "L10",
+      "id": "imot_main_main",
+      "community": 0,
+      "norm_label": "main()"
+    },
+    {
+      "label": "README.md",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L1",
+      "id": "readme_md",
+      "community": 1,
+      "norm_label": "readme.md"
+    },
+    {
+      "label": "imot.bg CLI",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L1",
+      "id": "imot_cli_readme_imot_bg_cli",
+      "community": 1,
+      "norm_label": "imot.bg cli"
+    },
+    {
+      "label": "Quick Reference",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L5",
+      "id": "imot_cli_readme_quick_reference",
+      "community": 1,
+      "norm_label": "quick reference"
+    },
+    {
+      "label": "code:bash (# Build)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L7",
+      "id": "imot_cli_readme_codeblock_1",
+      "community": 1,
+      "norm_label": "code:bash (# build)"
+    },
+    {
+      "label": "Commands",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L30",
+      "id": "imot_cli_readme_commands",
+      "community": 6,
+      "norm_label": "commands"
+    },
+    {
+      "label": "`search`",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L32",
+      "id": "imot_cli_readme_search",
+      "community": 6,
+      "norm_label": "`search`"
+    },
+    {
+      "label": "`sync`",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L51",
+      "id": "imot_cli_readme_sync",
+      "community": 6,
+      "norm_label": "`sync`"
+    },
+    {
+      "label": "`local`",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L54",
+      "id": "imot_cli_readme_local",
+      "community": 6,
+      "norm_label": "`local`"
+    },
+    {
+      "label": "`stats`",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L57",
+      "id": "imot_cli_readme_stats",
+      "community": 6,
+      "norm_label": "`stats`"
+    },
+    {
+      "label": "`sql`",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L60",
+      "id": "imot_cli_readme_sql",
+      "community": 6,
+      "norm_label": "`sql`"
+    },
+    {
+      "label": "`watch`",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L63",
+      "id": "imot_cli_readme_watch",
+      "community": 6,
+      "norm_label": "`watch`"
+    },
+    {
+      "label": "`cities`",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L70",
+      "id": "imot_cli_readme_cities",
+      "community": 6,
+      "norm_label": "`cities`"
+    },
+    {
+      "label": "Type Reference",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L73",
+      "id": "imot_cli_readme_type_reference",
+      "community": 1,
+      "norm_label": "type reference"
+    },
+    {
+      "label": "Residential",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L75",
+      "id": "imot_cli_readme_residential",
+      "community": 1,
+      "norm_label": "residential"
+    },
+    {
+      "label": "Commercial",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L86",
+      "id": "imot_cli_readme_commercial",
+      "community": 1,
+      "norm_label": "commercial"
+    },
+    {
+      "label": "Parking",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L94",
+      "id": "imot_cli_readme_parking",
+      "community": 1,
+      "norm_label": "parking"
+    },
+    {
+      "label": "Land",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L101",
+      "id": "imot_cli_readme_land",
+      "community": 1,
+      "norm_label": "land"
+    },
+    {
+      "label": "Data Schema",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L107",
+      "id": "imot_cli_readme_data_schema",
+      "community": 1,
+      "norm_label": "data schema"
+    },
+    {
+      "label": "Search Metadata Envelope",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L128",
+      "id": "imot_cli_readme_search_metadata_envelope",
+      "community": 1,
+      "norm_label": "search metadata envelope"
+    },
+    {
+      "label": "code:bash (./imot search --city \u0421\u043e\u0444\u0438\u044f --neighborhood \u041b\u043e\u0437\u0435\u043d\u0435\u0446 --pages 1 )",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L132",
+      "id": "imot_cli_readme_codeblock_2",
+      "community": 1,
+      "norm_label": "code:bash (./imot search --city \u0441\u043e\u0444\u0438\u044f --neighborhood \u043b\u043e\u0437\u0435\u043d\u0435\u0446 --pages 1 )"
+    },
+    {
+      "label": "SQLite Database",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L153",
+      "id": "imot_cli_readme_sqlite_database",
+      "community": 1,
+      "norm_label": "sqlite database"
+    },
+    {
+      "label": "Tables",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L157",
+      "id": "imot_cli_readme_tables",
+      "community": 1,
+      "norm_label": "tables"
+    },
+    {
+      "label": "Useful Queries",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L193",
+      "id": "imot_cli_readme_useful_queries",
+      "community": 1,
+      "norm_label": "useful queries"
+    },
+    {
+      "label": "code:sql (-- Count by type)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L195",
+      "id": "imot_cli_readme_codeblock_3",
+      "community": 1,
+      "norm_label": "code:sql (-- count by type)"
+    },
+    {
+      "label": "Architecture",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L213",
+      "id": "imot_cli_readme_architecture",
+      "community": 1,
+      "norm_label": "architecture"
+    },
+    {
+      "label": "code:block4 (cmd/imot/main.go        \u2014 entry point)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L215",
+      "id": "imot_cli_readme_codeblock_4",
+      "community": 1,
+      "norm_label": "code:block4 (cmd/imot/main.go        \u2014 entry point)"
+    },
+    {
+      "label": "How Parsing Works",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L229",
+      "id": "imot_cli_readme_how_parsing_works",
+      "community": 1,
+      "norm_label": "how parsing works"
+    },
+    {
+      "label": "Known Limitations",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L249",
+      "id": "imot_cli_readme_known_limitations",
+      "community": 1,
+      "norm_label": "known limitations"
+    },
+    {
+      "label": "Build",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L257",
+      "id": "imot_cli_readme_build",
+      "community": 1,
+      "norm_label": "build"
+    },
+    {
+      "label": "code:bash (go build -o imot ./cmd/imot/)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L261",
+      "id": "imot_cli_readme_codeblock_5",
+      "community": 1,
+      "norm_label": "code:bash (go build -o imot ./cmd/imot/)"
+    },
+    {
+      "label": "Development",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L265",
+      "id": "imot_cli_readme_development",
+      "community": 1,
+      "norm_label": "development"
+    },
+    {
+      "label": "code:bash (# Run tests)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L267",
+      "id": "imot_cli_readme_codeblock_6",
+      "community": 1,
+      "norm_label": "code:bash (# run tests)"
+    }
+  ],
+  "links": [
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "view.py",
+      "source_location": "L202",
+      "weight": 1.0,
+      "source": "view_py",
+      "target": "imot_cli_view_handler",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "view.py",
+      "source_location": "L202",
+      "weight": 1.0,
+      "source": "imot_cli_view_handler",
+      "target": "basehttprequesthandler",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "view.py",
+      "source_location": "L203",
+      "weight": 1.0,
+      "source": "imot_cli_view_handler",
+      "target": "imot_cli_view_handler_do_get",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "view.py",
+      "source_location": "L236",
+      "weight": 1.0,
+      "source": "imot_cli_view_handler",
+      "target": "imot_cli_view_handler_log_message",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L28",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_go",
+      "target": "scraper_client",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L33",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_go",
+      "target": "scraper_scraper_newclient",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L42",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_go",
+      "target": "scraper_scraper_jitteredsleep",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L186",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_go",
+      "target": "scraper_scraper_extractneighborhoodfromurl",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L228",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_go",
+      "target": "scraper_scraper_buildurlwithslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L273",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_go",
+      "target": "scraper_scraper_buildurl",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L277",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_go",
+      "target": "scraper_scraper_resolvecityslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L287",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_go",
+      "target": "scraper_scraper_resolvetypeslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L48",
+      "weight": 1.0,
+      "source": "scraper_client",
+      "target": "scraper_client_fetchpage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L80",
+      "weight": 1.0,
+      "source": "scraper_client",
+      "target": "scraper_client_fetchdetail",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L98",
+      "weight": 1.0,
+      "source": "scraper_client",
+      "target": "scraper_client_resolveneighborhoodslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L128",
+      "weight": 1.0,
+      "source": "scraper_client",
+      "target": "scraper_client_resolveslugviapost",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L297",
+      "weight": 1.0,
+      "source": "scraper_client",
+      "target": "scraper_client_search",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L306",
+      "weight": 1.0,
+      "source": "scraper_client",
+      "target": "scraper_client_searchwithmeta",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L169",
+      "weight": 1.0,
+      "source": "cli_root_rundetail",
+      "target": "scraper_scraper_newclient"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L210",
+      "weight": 1.0,
+      "source": "cli_root_runsearch",
+      "target": "scraper_scraper_newclient"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L246",
+      "weight": 1.0,
+      "source": "cli_root_runsync",
+      "target": "scraper_scraper_newclient"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L447",
+      "weight": 1.0,
+      "source": "cli_root_runwatch",
+      "target": "scraper_scraper_newclient"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L81",
+      "weight": 1.0,
+      "source": "scraper_client_fetchdetail",
+      "target": "scraper_scraper_jitteredsleep",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L353",
+      "weight": 1.0,
+      "source": "scraper_client_searchwithmeta",
+      "target": "scraper_scraper_jitteredsleep",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L83",
+      "weight": 1.0,
+      "source": "scraper_client_fetchdetail",
+      "target": "scraper_client_fetchpage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L111",
+      "weight": 1.0,
+      "source": "scraper_client_resolveneighborhoodslug",
+      "target": "scraper_client_fetchpage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L322",
+      "weight": 1.0,
+      "source": "scraper_client_searchwithmeta",
+      "target": "scraper_client_fetchpage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L88",
+      "weight": 1.0,
+      "source": "scraper_client_fetchdetail",
+      "target": "scraper_parser_parsedetail"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L110",
+      "weight": 1.0,
+      "source": "scraper_client_resolveneighborhoodslug",
+      "target": "scraper_scraper_buildurlwithslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L117",
+      "weight": 1.0,
+      "source": "scraper_client_resolveneighborhoodslug",
+      "target": "scraper_client_resolveslugviapost",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L316",
+      "weight": 1.0,
+      "source": "scraper_client_searchwithmeta",
+      "target": "scraper_client_resolveneighborhoodslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L104",
+      "weight": 1.0,
+      "source": "scraper_client_resolveneighborhoodslug",
+      "target": "translit_translit_toslug"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L138",
+      "weight": 1.0,
+      "source": "scraper_client_resolveslugviapost",
+      "target": "scraper_scraper_resolvecityslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L143",
+      "weight": 1.0,
+      "source": "scraper_client_resolveslugviapost",
+      "target": "scraper_scraper_resolvetypeslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L177",
+      "weight": 1.0,
+      "source": "scraper_client_resolveslugviapost",
+      "target": "scraper_scraper_extractneighborhoodfromurl",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L241",
+      "weight": 1.0,
+      "source": "scraper_scraper_buildurlwithslug",
+      "target": "scraper_scraper_resolvecityslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L254",
+      "weight": 1.0,
+      "source": "scraper_scraper_buildurlwithslug",
+      "target": "scraper_scraper_resolvetypeslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L274",
+      "weight": 1.0,
+      "source": "scraper_scraper_buildurl",
+      "target": "scraper_scraper_buildurlwithslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L321",
+      "weight": 1.0,
+      "source": "scraper_client_searchwithmeta",
+      "target": "scraper_scraper_buildurlwithslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L298",
+      "weight": 1.0,
+      "source": "scraper_client_search",
+      "target": "scraper_client_searchwithmeta",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L327",
+      "weight": 1.0,
+      "source": "scraper_client_searchwithmeta",
+      "target": "scraper_parser_parselistings"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/scraper/scraper.go",
+      "source_location": "L330",
+      "weight": 1.0,
+      "source": "scraper_client_searchwithmeta",
+      "target": "scraper_parser_parsetotalcount"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L47",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_parselistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L74",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_parselistingblock",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L142",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_extracttype",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L185",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_extractinfo",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L200",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_parseinfo",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L317",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_parseprice",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L332",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_striptags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L351",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_generatehash",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L357",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_parsebulgarianmonth",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L390",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_parsetotalcount",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L403",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_parsedetail",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L575",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_normalizephotourl",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L593",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_go",
+      "target": "scraper_parser_uniquephotourls",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L58",
+      "weight": 1.0,
+      "source": "scraper_parser_parselistings",
+      "target": "scraper_parser_parselistingblock",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L90",
+      "weight": 1.0,
+      "source": "scraper_parser_parselistingblock",
+      "target": "scraper_parser_striptags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L109",
+      "weight": 1.0,
+      "source": "scraper_parser_parselistingblock",
+      "target": "scraper_parser_extracttype",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L113",
+      "weight": 1.0,
+      "source": "scraper_parser_parselistingblock",
+      "target": "scraper_parser_parseprice",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L120",
+      "weight": 1.0,
+      "source": "scraper_parser_parselistingblock",
+      "target": "scraper_parser_extractinfo",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L122",
+      "weight": 1.0,
+      "source": "scraper_parser_parselistingblock",
+      "target": "scraper_parser_parseinfo",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L136",
+      "weight": 1.0,
+      "source": "scraper_parser_parselistingblock",
+      "target": "scraper_parser_generatehash",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L76",
+      "weight": 1.0,
+      "source": "scraper_parser_parselistingblock",
+      "target": "scraper_types_formattimestamp"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L542",
+      "weight": 1.0,
+      "source": "scraper_parser_parsedetail",
+      "target": "scraper_parser_parseprice",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L410",
+      "weight": 1.0,
+      "source": "scraper_parser_parsedetail",
+      "target": "scraper_parser_striptags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L548",
+      "weight": 1.0,
+      "source": "scraper_parser_parsedetail",
+      "target": "scraper_parser_parsebulgarianmonth",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L82",
+      "weight": 1.0,
+      "source": "scraper_scraper_test_testparsetotalcount",
+      "target": "scraper_parser_parsetotalcount"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L566",
+      "weight": 1.0,
+      "source": "scraper_parser_parsedetail",
+      "target": "scraper_parser_uniquephotourls",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/scraper/parser_photo_test.go",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "scraper_parser_photo_test_testparsedetailextractsorderedphotourls",
+      "target": "scraper_parser_parsedetail"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser.go",
+      "source_location": "L597",
+      "weight": 1.0,
+      "source": "scraper_parser_uniquephotourls",
+      "target": "scraper_parser_normalizephotourl",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L14",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_test_go",
+      "target": "scraper_roundtripfunc",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L20",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_test_go",
+      "target": "scraper_scraper_test_htmlresponse",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L32",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_test_go",
+      "target": "scraper_scraper_test_testsearchwithmetamarkspartialonlaterpagefailure",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L58",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_test_go",
+      "target": "scraper_scraper_test_testsearchwithmetaincludesresolvedneighborhoodslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L75",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_test_go",
+      "target": "scraper_scraper_test_testtypemapincludesatelie",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L81",
+      "weight": 1.0,
+      "source": "internal_scraper_scraper_test_go",
+      "target": "scraper_scraper_test_testparsetotalcount",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L16",
+      "weight": 1.0,
+      "source": "scraper_roundtripfunc",
+      "target": "scraper_roundtripfunc_roundtrip",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L33",
+      "weight": 1.0,
+      "source": "scraper_scraper_test_testsearchwithmetamarkspartialonlaterpagefailure",
+      "target": "scraper_roundtripfunc",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L59",
+      "weight": 1.0,
+      "source": "scraper_scraper_test_testsearchwithmetaincludesresolvedneighborhoodslug",
+      "target": "scraper_roundtripfunc",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L35",
+      "weight": 1.0,
+      "source": "scraper_scraper_test_testsearchwithmetamarkspartialonlaterpagefailure",
+      "target": "scraper_scraper_test_htmlresponse",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/scraper_test.go",
+      "source_location": "L60",
+      "weight": 1.0,
+      "source": "scraper_scraper_test_testsearchwithmetaincludesresolvedneighborhoodslug",
+      "target": "scraper_scraper_test_htmlresponse",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "internal_scraper_types_go",
+      "target": "scraper_detaillisting",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L26",
+      "weight": 1.0,
+      "source": "internal_scraper_types_go",
+      "target": "scraper_listing",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L46",
+      "weight": 1.0,
+      "source": "internal_scraper_types_go",
+      "target": "scraper_searcherror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L53",
+      "weight": 1.0,
+      "source": "internal_scraper_types_go",
+      "target": "scraper_searchresult",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L149",
+      "weight": 1.0,
+      "source": "internal_scraper_types_go",
+      "target": "scraper_searchparams",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/types.go",
+      "source_location": "L162",
+      "weight": 1.0,
+      "source": "internal_scraper_types_go",
+      "target": "scraper_types_formattimestamp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/scraper/parser_photo_test.go",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "internal_scraper_parser_photo_test_go",
+      "target": "scraper_parser_photo_test_testparsedetailextractsorderedphotourls",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/translit/translit_test.go",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "internal_translit_translit_test_go",
+      "target": "translit_translit_test_testneighborhoodslugs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/translit/translit_test.go",
+      "source_location": "L11",
+      "weight": 1.0,
+      "source": "translit_translit_test_testneighborhoodslugs",
+      "target": "translit_translit_toslug"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/translit/translit.go",
+      "source_location": "L20",
+      "weight": 1.0,
+      "source": "internal_translit_translit_go",
+      "target": "translit_translit_toslug",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/translit/translit.go",
+      "source_location": "L41",
+      "weight": 1.0,
+      "source": "internal_translit_translit_go",
+      "target": "translit_translit_normalizecity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L189",
+      "weight": 1.0,
+      "source": "cli_root_resolvecity",
+      "target": "translit_translit_normalizecity"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L38",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_addsearchflags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L55",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newrootcommand",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L74",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newsearchcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L85",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newsynccmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L96",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newlocalcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L107",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newstatscmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L119",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newsqlcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L130",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newwatchcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L142",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newcitiescmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L151",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_newdetailcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L163",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_rundetail",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L181",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_resolvecity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L192",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_runsearch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L228",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_runsync",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L274",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_runlocal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L295",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_runstats",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L351",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_runsql",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L408",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_runwatch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L485",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_runcities",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L499",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_filterlistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L525",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_deduplistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L537",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_outputlistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L580",
+      "weight": 1.0,
+      "source": "internal_cli_root_go",
+      "target": "cli_root_formatlistingagent",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L81",
+      "weight": 1.0,
+      "source": "cli_root_newsearchcmd",
+      "target": "cli_root_addsearchflags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L92",
+      "weight": 1.0,
+      "source": "cli_root_newsynccmd",
+      "target": "cli_root_addsearchflags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L103",
+      "weight": 1.0,
+      "source": "cli_root_newlocalcmd",
+      "target": "cli_root_addsearchflags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L114",
+      "weight": 1.0,
+      "source": "cli_root_newstatscmd",
+      "target": "cli_root_addsearchflags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L137",
+      "weight": 1.0,
+      "source": "cli_root_newwatchcmd",
+      "target": "cli_root_addsearchflags",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L62",
+      "weight": 1.0,
+      "source": "cli_root_newrootcommand",
+      "target": "cli_root_newsearchcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L63",
+      "weight": 1.0,
+      "source": "cli_root_newrootcommand",
+      "target": "cli_root_newsynccmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L64",
+      "weight": 1.0,
+      "source": "cli_root_newrootcommand",
+      "target": "cli_root_newlocalcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L65",
+      "weight": 1.0,
+      "source": "cli_root_newrootcommand",
+      "target": "cli_root_newstatscmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L66",
+      "weight": 1.0,
+      "source": "cli_root_newrootcommand",
+      "target": "cli_root_newsqlcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L67",
+      "weight": 1.0,
+      "source": "cli_root_newrootcommand",
+      "target": "cli_root_newwatchcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L68",
+      "weight": 1.0,
+      "source": "cli_root_newrootcommand",
+      "target": "cli_root_newcitiescmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L69",
+      "weight": 1.0,
+      "source": "cli_root_newrootcommand",
+      "target": "cli_root_newdetailcmd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "cmd/imot/main.go",
+      "source_location": "L11",
+      "weight": 1.0,
+      "source": "imot_main_main",
+      "target": "cli_root_newrootcommand"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L197",
+      "weight": 1.0,
+      "source": "cli_root_runsearch",
+      "target": "cli_root_resolvecity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L233",
+      "weight": 1.0,
+      "source": "cli_root_runsync",
+      "target": "cli_root_resolvecity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L278",
+      "weight": 1.0,
+      "source": "cli_root_runlocal",
+      "target": "cli_root_resolvecity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L299",
+      "weight": 1.0,
+      "source": "cli_root_runstats",
+      "target": "cli_root_resolvecity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L418",
+      "weight": 1.0,
+      "source": "cli_root_runwatch",
+      "target": "cli_root_resolvecity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L217",
+      "weight": 1.0,
+      "source": "cli_root_runsearch",
+      "target": "cli_root_deduplistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L218",
+      "weight": 1.0,
+      "source": "cli_root_runsearch",
+      "target": "cli_root_filterlistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L225",
+      "weight": 1.0,
+      "source": "cli_root_runsearch",
+      "target": "cli_root_outputlistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L256",
+      "weight": 1.0,
+      "source": "cli_root_runsync",
+      "target": "cli_root_deduplistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L257",
+      "weight": 1.0,
+      "source": "cli_root_runsync",
+      "target": "cli_root_filterlistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L259",
+      "weight": 1.0,
+      "source": "cli_root_runsync",
+      "target": "store_store_new"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L292",
+      "weight": 1.0,
+      "source": "cli_root_runlocal",
+      "target": "cli_root_outputlistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L281",
+      "weight": 1.0,
+      "source": "cli_root_runlocal",
+      "target": "store_store_new"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L302",
+      "weight": 1.0,
+      "source": "cli_root_runstats",
+      "target": "store_store_new"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L354",
+      "weight": 1.0,
+      "source": "cli_root_runsql",
+      "target": "store_store_new"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L454",
+      "weight": 1.0,
+      "source": "cli_root_runwatch",
+      "target": "cli_root_deduplistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L455",
+      "weight": 1.0,
+      "source": "cli_root_runwatch",
+      "target": "cli_root_filterlistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L465",
+      "weight": 1.0,
+      "source": "cli_root_runwatch",
+      "target": "cli_root_formatlistingagent",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/cli/root.go",
+      "source_location": "L431",
+      "weight": 1.0,
+      "source": "cli_root_runwatch",
+      "target": "store_store_new"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/cli/root.go",
+      "source_location": "L553",
+      "weight": 1.0,
+      "source": "cli_root_outputlistings",
+      "target": "cli_root_formatlistingagent",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L57",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_store",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L62",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_store_new",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L104",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_dbexecutor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L109",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_priceentry",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L115",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_store_generatelistinghash",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L130",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_store_appendpricehistory",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L145",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_store_upsertlisting",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L238",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_store_insertsynclog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L308",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_stats",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L319",
+      "weight": 1.0,
+      "source": "internal_store_store_go",
+      "target": "store_neighborhoodstats",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L95",
+      "weight": 1.0,
+      "source": "store_store",
+      "target": "store_store_close",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L100",
+      "weight": 1.0,
+      "source": "store_store",
+      "target": "store_store_db",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L206",
+      "weight": 1.0,
+      "source": "store_store",
+      "target": "store_store_upsertlisting",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L211",
+      "weight": 1.0,
+      "source": "store_store",
+      "target": "store_store_synclistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L247",
+      "weight": 1.0,
+      "source": "store_store",
+      "target": "store_store_insertsynclog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L252",
+      "weight": 1.0,
+      "source": "store_store",
+      "target": "store_store_querylistings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L326",
+      "weight": 1.0,
+      "source": "store_store",
+      "target": "store_store_getstats",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L13",
+      "weight": 1.0,
+      "source": "store_store_test_newteststore",
+      "target": "store_store_new"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L291",
+      "weight": 1.0,
+      "source": "store_store_querylistings",
+      "target": "store_store_close",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L374",
+      "weight": 1.0,
+      "source": "store_store_getstats",
+      "target": "store_store_close",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L146",
+      "weight": 1.0,
+      "source": "store_store_upsertlisting",
+      "target": "store_store_generatelistinghash",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L189",
+      "weight": 1.0,
+      "source": "store_store_upsertlisting",
+      "target": "store_store_appendpricehistory",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L220",
+      "weight": 1.0,
+      "source": "store_store_synclistings",
+      "target": "store_store_upsertlisting",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store.go",
+      "source_location": "L229",
+      "weight": 1.0,
+      "source": "store_store_synclistings",
+      "target": "store_store_insertsynclog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L11",
+      "weight": 1.0,
+      "source": "internal_store_store_test_go",
+      "target": "store_store_test_newteststore",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L21",
+      "weight": 1.0,
+      "source": "internal_store_store_test_go",
+      "target": "store_store_test_testsynclistingsstoressamespecsdifferentfloors",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L45",
+      "weight": 1.0,
+      "source": "internal_store_store_test_go",
+      "target": "store_store_test_testupsertlistingpricehistoryusesvalidjson",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L22",
+      "weight": 1.0,
+      "source": "store_store_test_testsynclistingsstoressamespecsdifferentfloors",
+      "target": "store_store_test_newteststore",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "internal/store/store_test.go",
+      "source_location": "L46",
+      "weight": 1.0,
+      "source": "store_store_test_testupsertlistingpricehistoryusesvalidjson",
+      "target": "store_store_test_newteststore",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "cmd/imot/main.go",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "cmd_imot_main_go",
+      "target": "imot_main_main",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "source": "readme_md",
+      "target": "imot_cli_readme_imot_bg_cli",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_quick_reference",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L30",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_commands",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L73",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_type_reference",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L107",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_data_schema",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L153",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_sqlite_database",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L213",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_architecture",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L229",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_how_parsing_works",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L249",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_known_limitations",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L257",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_build",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L265",
+      "weight": 1.0,
+      "source": "imot_cli_readme_imot_bg_cli",
+      "target": "imot_cli_readme_development",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L7",
+      "weight": 1.0,
+      "source": "imot_cli_readme_quick_reference",
+      "target": "imot_cli_readme_codeblock_1",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L32",
+      "weight": 1.0,
+      "source": "imot_cli_readme_commands",
+      "target": "imot_cli_readme_search",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L51",
+      "weight": 1.0,
+      "source": "imot_cli_readme_commands",
+      "target": "imot_cli_readme_sync",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L54",
+      "weight": 1.0,
+      "source": "imot_cli_readme_commands",
+      "target": "imot_cli_readme_local",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L57",
+      "weight": 1.0,
+      "source": "imot_cli_readme_commands",
+      "target": "imot_cli_readme_stats",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L60",
+      "weight": 1.0,
+      "source": "imot_cli_readme_commands",
+      "target": "imot_cli_readme_sql",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L63",
+      "weight": 1.0,
+      "source": "imot_cli_readme_commands",
+      "target": "imot_cli_readme_watch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L70",
+      "weight": 1.0,
+      "source": "imot_cli_readme_commands",
+      "target": "imot_cli_readme_cities",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L75",
+      "weight": 1.0,
+      "source": "imot_cli_readme_type_reference",
+      "target": "imot_cli_readme_residential",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L86",
+      "weight": 1.0,
+      "source": "imot_cli_readme_type_reference",
+      "target": "imot_cli_readme_commercial",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L94",
+      "weight": 1.0,
+      "source": "imot_cli_readme_type_reference",
+      "target": "imot_cli_readme_parking",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L101",
+      "weight": 1.0,
+      "source": "imot_cli_readme_type_reference",
+      "target": "imot_cli_readme_land",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L128",
+      "weight": 1.0,
+      "source": "imot_cli_readme_data_schema",
+      "target": "imot_cli_readme_search_metadata_envelope",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L132",
+      "weight": 1.0,
+      "source": "imot_cli_readme_search_metadata_envelope",
+      "target": "imot_cli_readme_codeblock_2",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L157",
+      "weight": 1.0,
+      "source": "imot_cli_readme_sqlite_database",
+      "target": "imot_cli_readme_tables",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L193",
+      "weight": 1.0,
+      "source": "imot_cli_readme_sqlite_database",
+      "target": "imot_cli_readme_useful_queries",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L195",
+      "weight": 1.0,
+      "source": "imot_cli_readme_useful_queries",
+      "target": "imot_cli_readme_codeblock_3",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L215",
+      "weight": 1.0,
+      "source": "imot_cli_readme_architecture",
+      "target": "imot_cli_readme_codeblock_4",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L261",
+      "weight": 1.0,
+      "source": "imot_cli_readme_build",
+      "target": "imot_cli_readme_codeblock_5",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L267",
+      "weight": 1.0,
+      "source": "imot_cli_readme_development",
+      "target": "imot_cli_readme_codeblock_6",
+      "confidence_score": 1.0
+    }
+  ],
+  "hyperedges": []
+}

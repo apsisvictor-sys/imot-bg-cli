@@ -34,6 +34,24 @@ type Config struct {
 	// only application/json and cannot consume an SSE-framed reply.
 	JSONResponse bool
 
+	// RadarDSN is the dedicated read-only Postgres connection to the
+	// authoritative Market Radar database. It is empty by default, which leaves
+	// every request on the labelled live imot.bg fallback. It must never carry
+	// the collector writer or CRM credential; the configured role is expected to
+	// be least-privilege read-only, and the reader additionally pins the session
+	// read-only.
+	RadarDSN string
+	// RadarQueryTimeout bounds one Radar read.
+	RadarQueryTimeout time.Duration
+	// RadarFreshness is how old a complete neighbourhood observation may be
+	// before results are labelled stale instead of complete.
+	RadarFreshness time.Duration
+	// RadarEnqueueDSN is the dedicated connection for the constrained
+	// collection-request boundary (two fixed SQL functions). The configured role
+	// carries no table privileges, so enqueue/status are its only capabilities.
+	// It is empty by default, which keeps every tool unconditionally read-only.
+	RadarEnqueueDSN string
+
 	LiveQuotaPerWindow   int           // live operations allowed per identity per window
 	GlobalQuotaPerWindow int           // live operations allowed across all identities per window
 	QuotaWindow          time.Duration // quota window length
@@ -73,6 +91,10 @@ func LoadConfig() (Config, error) {
 		GlobalQuotaPerWindow: envInt("IMOT_MCP_GLOBAL_QUOTA", 150),
 		QuotaWindow:          envDuration("IMOT_MCP_QUOTA_WINDOW", time.Hour),
 		JSONResponse:         envBool("IMOT_MCP_JSON_RESPONSE", true),
+		RadarDSN:             envStr("IMOT_MCP_RADAR_DSN", ""),
+		RadarQueryTimeout:    envDuration("IMOT_MCP_RADAR_TIMEOUT", 5*time.Second),
+		RadarFreshness:       envDuration("IMOT_MCP_RADAR_FRESHNESS", 26*time.Hour),
+		RadarEnqueueDSN:      envStr("IMOT_MCP_RADAR_ENQUEUE_DSN", ""),
 	}
 
 	tokens, err := parseTokens(os.Getenv("IMOT_MCP_TOKENS"))
@@ -120,6 +142,12 @@ func (c Config) validate() error {
 	}
 	if c.LiveQuotaPerWindow < 1 || c.GlobalQuotaPerWindow < 1 {
 		return fmt.Errorf("quota limits must be positive")
+	}
+	if c.RadarQueryTimeout <= 0 {
+		return fmt.Errorf("IMOT_MCP_RADAR_TIMEOUT must be positive")
+	}
+	if c.RadarFreshness <= 0 {
+		return fmt.Errorf("IMOT_MCP_RADAR_FRESHNESS must be positive")
 	}
 	return nil
 }

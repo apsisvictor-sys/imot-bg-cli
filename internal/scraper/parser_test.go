@@ -491,3 +491,245 @@ func TestDetailSuccessJSONCarriesPresenceContract(t *testing.T) {
 		}
 	}
 }
+
+// Primary advert extraction (A1). The live imot.bg detail page renders the
+// advert's own content under .ad2023 and shows recommendation cards for other
+// adverts elsewhere. Photographs must come from the advert's primary gallery,
+// its identity-matched offer list or og:image, never from a page-wide scan that
+// mixes other adverts in.
+
+// A valid land advert has no .carExtri "Особености" section. On a complete,
+// identity-verified advert layout that omission is the source's own absence, so
+// the listing completes and a consumer may clear stored features instead of
+// keeping them forever because the field was unknown.
+func TestDetailLandAdvertWithoutFeaturesCompletes(t *testing.T) {
+	const url = "https://www.imot.bg/obiava-1r164785405040282-prodava-partsel-grad-sofiya-gotse-delchev"
+	detail, err := ParseDetailPage(readFixture(t, "detail-land-no-features.html"), url)
+	if err != nil {
+		t.Fatalf("land advert rejected: %v", err)
+	}
+	if len(detail.Features) != 0 {
+		t.Errorf("features = %#v, want none: the advert rendered no features section", detail.Features)
+	}
+	requireDetailEvidence(t, detail, DetailKeyFeatures, DetailPresenceVerifiedAbsent, DetailReasonFeaturesAbsent)
+	requireDetailEvidence(t, detail, DetailKeyPhotoURLs, DetailPresencePresent, DetailReasonPhotoSelector)
+	if !strings.Contains(detail.PhotoURL, "/big1/1r164785405040282_xn.jpg") {
+		t.Errorf("photo_url = %q, want the source's fullscreen /big1/ gallery variant", detail.PhotoURL)
+	}
+	// The smaller social copy is retained as the advertised fallback instead of
+	// being discarded with the variant it belongs to.
+	if len(detail.PhotoURLs) != 2 || !strings.Contains(detail.PhotoURLs[1], "/big/1r164785405040282_xn.jpg") {
+		t.Errorf("photo_urls = %#v, want the /big/ fallback after the /big1/ fullscreen variant", detail.PhotoURLs)
+	}
+}
+
+// An advert that explicitly has no photographs renders the primary nophoto
+// placeholder and no gallery. The placeholder is the source's own proof of
+// absence, while the recommendation cards' focus.bg photographs belong to other
+// adverts and must not reach this advert's list.
+func TestDetailNoPhotoPlaceholderIsVerifiedAbsence(t *testing.T) {
+	const url = "https://www.imot.bg/obiava-1c176600053014964-tristaen-apartament-grad-sofiya-banishora"
+	detail, err := ParseDetailPage(readFixture(t, "detail-no-photo-placeholder.html"), url)
+	if err != nil {
+		t.Fatalf("no-photo advert rejected: %v", err)
+	}
+	if detail.PhotoURL != "" || len(detail.PhotoURLs) != 0 {
+		t.Errorf("photos = %q / %#v, want none", detail.PhotoURL, detail.PhotoURLs)
+	}
+	ev := requireDetailEvidence(t, detail, DetailKeyPhotoURLs, DetailPresenceVerifiedAbsent, DetailReasonNoPhotoPlaceholder)
+	if ev.Raw != nil {
+		t.Errorf("verified_absent photos raw = %#v, want null", ev.Raw)
+	}
+	// The advert still completes with its real features and description.
+	if len(detail.Features) != 2 || detail.Features[0] != "Тухла" {
+		t.Errorf("features = %#v, want the advert's own two tags", detail.Features)
+	}
+	if detail.FullDescription == "" {
+		t.Error("full_description was not extracted")
+	}
+
+	joined := strings.Join(detail.PhotoURLs, " ")
+	for _, foreign := range []string{"1r169052714326239", "1r173307466150659", "1r166903703506895", "1r176902207606034"} {
+		if strings.Contains(joined, foreign) {
+			t.Errorf("recommendation photograph %s leaked into photo_urls", foreign)
+		}
+	}
+}
+
+// The primary gallery is read with its lazy and fullscreen attributes, its real
+// formats and its advertised fallbacks. Each photograph's variants stay grouped
+// with the largest advertised variant first, carousel clones collapse into it,
+// and recommendation photographs outside the gallery are excluded.
+func TestDetailGalleryIsScopedFullscreenFirst(t *testing.T) {
+	const url = "https://www.imot.bg/obiava-1c176570442942924-prodava-tristaen-apartament-grad-sofiya-banishora"
+	detail, err := ParseDetailPage(readFixture(t, "detail-gallery-eleven.html"), url)
+	if err != nil {
+		t.Fatalf("gallery advert rejected: %v", err)
+	}
+	const big1 = "https://imotstatic3.focus.bg/imot/photosimotbg/1/924/big1/1c176570442942924_"
+	const plain = "https://imotstatic3.focus.bg/imot/photosimotbg/1/924/1c176570442942924_"
+	want := []string{
+		big1 + "pg.jpg",
+		"https://imotstatic3.focus.bg/imot/photosimotbg/1/924/big/1c176570442942924_pg.jpg",
+		plain + "pg.jpg",
+		big1 + "h6.jpg",
+		plain + "h6.jpg",
+		big1 + "hs.jpg",
+		big1 + "G7.jpg",
+		big1 + "ge.jpg",
+		big1 + "W0.jpg",
+		big1 + "uU.jpg",
+		big1 + "PX.jpg",
+		big1 + "pN.jpg",
+		big1 + "yA.jpg",
+		big1 + "MT.png",
+	}
+	if len(detail.PhotoURLs) != len(want) {
+		t.Fatalf("photo_urls = %#v, want %d advertised variants", detail.PhotoURLs, len(want))
+	}
+	for i, wantURL := range want {
+		if detail.PhotoURLs[i] != wantURL {
+			t.Errorf("photo_urls[%d] = %q, want %q", i, detail.PhotoURLs[i], wantURL)
+		}
+	}
+	if detail.PhotoURL != big1+"pg.jpg" {
+		t.Errorf("photo_url = %q, want the /big1/ fullscreen variant over the /big/ og:image", detail.PhotoURL)
+	}
+	// Eleven distinct photographs, each de-duplicated by identity across the
+	// gallery, its clones and the social copy.
+	identities := make(map[string]bool)
+	for _, u := range detail.PhotoURLs {
+		identities[photoBasename(u)] = true
+	}
+	if len(identities) != 11 {
+		t.Errorf("photo_urls carry %d distinct photograph identities, want 11: %#v", len(identities), detail.PhotoURLs)
+	}
+	// Recommendation cards advertise other adverts; none of their photographs
+	// may reach this advert's list.
+	for _, u := range detail.PhotoURLs {
+		for _, foreign := range []string{"1r169052714326239", "1r173307466150659", "1r176902207606034"} {
+			if strings.Contains(u, foreign) {
+				t.Errorf("recommendation photograph %s leaked into photo_urls: %q", foreign, u)
+			}
+		}
+	}
+}
+
+// Structured data contributes photographs only when its own url/sku identity is
+// this advert's. A matching Offer's image list is appended after the gallery,
+// even when its product label contradicts the page; a block for another advert
+// contributes nothing.
+func TestDetailJSONLDImagesRequireMatchingIdentity(t *testing.T) {
+	const url = "https://www.imot.bg/obiava-1c176570442942924-prodava-tristaen-apartament-grad-sofiya-banishora"
+	detail, err := ParseDetailPage(readFixture(t, "detail-jsonld-identity.html"), url)
+	if err != nil {
+		t.Fatalf("advert rejected: %v", err)
+	}
+	if len(detail.PhotoURLs) != 4 {
+		t.Fatalf("photo_urls = %#v, want the two gallery photographs with the page's social fallback plus the identity-matched offer image", detail.PhotoURLs)
+	}
+	want := []string{
+		"https://imotstatic3.focus.bg/imot/photosimotbg/1/924/big1/1c176570442942924_pg.jpg",
+		"https://imotstatic3.focus.bg/imot/photosimotbg/1/924/big/1c176570442942924_pg.jpg",
+		"https://imotstatic3.focus.bg/imot/photosimotbg/1/924/big1/1c176570442942924_h6.jpg",
+		"https://imotstatic3.focus.bg/imot/photosimotbg/1/924/big1/1c176570442942924_a3.jpg",
+	}
+	for i, wantURL := range want {
+		if detail.PhotoURLs[i] != wantURL {
+			t.Errorf("photo_urls[%d] = %q, want %q", i, detail.PhotoURLs[i], wantURL)
+		}
+	}
+	for _, foreign := range []string{"1o170965300976509_bk.jpg", "1o170965300976509_se.jpg"} {
+		for _, u := range detail.PhotoURLs {
+			if strings.Contains(u, foreign) {
+				t.Errorf("foreign JSON-LD image %s leaked into photo_urls: %q", foreign, u)
+			}
+		}
+	}
+}
+
+// The photograph collector never falls back to a page-wide scan: a page whose
+// recommendations carry focus.bg photographs yields only the primary gallery's
+// own images, with the larger advertised variant preferred.
+func TestUniquePhotoURLsScopesToPrimaryGallery(t *testing.T) {
+	html := `<meta property="og:image" content="//cdn3.focus.bg/imot/photosimotbg/2/768//big/2c178773245606768_e1.jpg">` +
+		`<div id="rezon-gallery"><div id="owlcarousel">` +
+		`<div class="item"><img data-src="//cdn3.focus.bg/imot/photosimotbg/2/768//big1/2c178773245606768_e1.jpg"></div>` +
+		`<div class="item"><img data-src-gallery="//cdn3.focus.bg/imot/photosimotbg/2/768//big1/2c178773245606768_mu.png"></div>` +
+		`</div></div>` +
+		`<div class="pic"><img src="//cdn3.focus.bg/imot/photosimotbg/1/039/1r999999999999039_zz.jpg"></div>`
+	photos := uniquePhotoURLs(html)
+	want := []string{
+		"https://cdn3.focus.bg/imot/photosimotbg/2/768/big1/2c178773245606768_e1.jpg",
+		"https://cdn3.focus.bg/imot/photosimotbg/2/768/big/2c178773245606768_e1.jpg",
+		"https://cdn3.focus.bg/imot/photosimotbg/2/768/big1/2c178773245606768_mu.png",
+	}
+	if len(photos) != len(want) {
+		t.Fatalf("photos = %#v, want only the gallery photographs and their advertised variants", photos)
+	}
+	for i, wantURL := range want {
+		if photos[i] != wantURL {
+			t.Errorf("photos[%d] = %q, want %q", i, photos[i], wantURL)
+		}
+	}
+}
+
+// A truncated advert response is not the source's complete layout: neither its
+// missing features section nor its primary placeholder may be read as absence.
+func TestDetailTruncatedAdvertKeepsOptionalSectionsUnknown(t *testing.T) {
+	const url = "https://www.imot.bg/obiava-1c176600053014964-tristaen-apartament-grad-sofiya-banishora"
+	html := `<meta property="og:url" content="` + url + `">` +
+		`<div class="ad2023"><div class="left">` +
+		`<img src="https://www.imot.bg/images/picturess/nophoto_660x495.svg">` +
+		`<div class="adParams"><div class="params">Площ: 93 кв.м, Агенция</div></div>` +
+		`<div class="text">Тристаен апартамент в Банишора с източно изложение.</div>` +
+		`<div class="phone">тел.: 0888 123 456</div>` // no closing tags: a truncated response
+	detail, err := ParseDetailPage(html, url)
+	if err != nil {
+		t.Fatalf("advert-shaped truncated page rejected: %v", err)
+	}
+	requireDetailEvidence(t, detail, DetailKeyPhotoURLs, DetailPresenceUnknown, DetailReasonNoSelectorHit)
+	requireDetailEvidence(t, detail, DetailKeyFeatures, DetailPresenceUnknown, DetailReasonNoSelectorHit)
+}
+
+// A recognized layout whose features container rendered markup this parser does
+// not understand proves nothing about the advert's features: it stays unknown,
+// unlike the genuine omission of the whole section.
+func TestDetailUnrecognizedFeaturesOnRecognizedLayoutStayUnknown(t *testing.T) {
+	const url = "https://www.imot.bg/obiava-1c176600053014964-tristaen-apartament-grad-sofiya-banishora"
+	html := `<meta property="og:url" content="` + url + `">` +
+		`<div class="ad2023"><div class="left">` +
+		`<div class="borderBox"><div class="carExtri"><span class="Title">Особености</span><br>` +
+		`<div class="items"><span>Асансьор</span></div></div></div>` +
+		`<div class="adParams"><div class="params">Площ: 93 кв.м, Агенция</div></div>` +
+		`<div class="text">Тристаен апартамент в Банишора с източно изложение.</div>` +
+		`<div class="phone">тел.: 0888 123 456</div>` +
+		`</div></div></html>`
+	detail, err := ParseDetailPage(html, url)
+	if err != nil {
+		t.Fatalf("advert-shaped page rejected: %v", err)
+	}
+	if len(detail.Features) != 0 {
+		t.Errorf("features = %#v, want none: the inner markup is not recognized", detail.Features)
+	}
+	requireDetailEvidence(t, detail, DetailKeyFeatures, DetailPresenceUnknown, DetailReasonFeaturesUnrecognized)
+}
+
+// Notification popups render their own smaller no-photo placeholder outside the
+// primary advert subtree. It must not be read as this advert's photo absence.
+func TestDetailNotificationPlaceholderIsNotPhotoAbsence(t *testing.T) {
+	const url = "https://www.imot.bg/obiava-1c176600053014964-tristaen-apartament-grad-sofiya-banishora"
+	html := `<meta property="og:url" content="` + url + `">` +
+		`<div class="ad2023"><div class="left">` +
+		`<div class="adParams"><div class="params">Площ: 93 кв.м, Агенция</div></div>` +
+		`<div class="text">Тристаен апартамент в Банишора с източно изложение.</div>` +
+		`<div class="phone">тел.: 0888 123 456</div>` +
+		`</div></div>` +
+		`<div id="notification-popup"><a href=""><img src="../images/picturess/nophoto_490x341.svg"></a></div>` +
+		`</html>`
+	detail, err := ParseDetailPage(html, url)
+	if err != nil {
+		t.Fatalf("advert-shaped page rejected: %v", err)
+	}
+	requireDetailEvidence(t, detail, DetailKeyPhotoURLs, DetailPresenceUnknown, DetailReasonNoSelectorHit)
+}

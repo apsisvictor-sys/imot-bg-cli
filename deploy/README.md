@@ -16,11 +16,49 @@ workers, behind nginx with Let's Encrypt.
 - **Cache-first.** A repeat question inside `IMOT_MCP_SEARCH_TTL` never touches
   imot.bg. This is what keeps several colleagues from multiplying requests on an
   egress that Market Radar also uses.
+- **Radar-first inside its catalogue.** When `IMOT_MCP_RADAR_DSN` is set, a
+  Sofia sale search or detail read that falls inside the shared Market Radar
+  scope is answered from the authoritative Radar Postgres store and makes zero
+  imot.bg requests. Rentals and out-of-catalogue areas keep the live fallback,
+  labelled with `source`, `coverage` and `observed_at`. SQLite remains the
+  MCP's own cache and usage store only; it is never authoritative.
 - **One token per colleague.** Identity is pinned per token, so quotas are per
   person and revocation is a one-line edit. It also avoids depending on request
   context reaching the MCP tool handler.
 - **Read-only.** All tools carry `readOnlyHint`, so clients do not gate them
   behind write confirmations.
+
+## Market Radar read path
+
+Phase U1 of
+`broker-essentials/docs/plans/market-radar-mcp-unified-serving-plan-2026-09-13.md`
+adds a read-only Radar reader to the MCP. It is optional and off until
+`IMOT_MCP_RADAR_DSN` is configured.
+
+- The reader uses its own least-privilege Postgres role over a dedicated DSN.
+  It never accepts SQL, URLs, roles or paths from the model, every query is a
+  static statement with bind parameters, and the session sets
+  `default_transaction_read_only=on` as defence in depth. The collector writer
+  credential and the CRM credential are never used here.
+- In scope are Sofia sales whose neighbourhood resolves to an active row in the
+  Radar catalogue (`RadarNeighborhood`). Scope, price and size filters are
+  applied in the reader. A complete, fresh zero-match scope is a verified empty
+  result; `never_collected`, `partial`, `stale` and `unavailable` are not.
+- Coverage is classified conservatively: it is `complete` only when the latest
+  attempt finished `ok`, the coverage receipt does not say incomplete, and the
+  last complete scrape is inside `IMOT_MCP_RADAR_FRESHNESS` (default 26h).
+- Rentals, other cities, citywide queries and non-catalogue neighbourhoods keep
+  the existing live imot.bg fallback, labelled `source: live`,
+  `coverage: out_of_scope` (or `unavailable` when Radar could not be read). No
+  answer silently mixes the two sources.
+- Every answer now carries `source`, `coverage`, `readiness`, `observed_at` and
+  `empty_verified`, and `readiness` reports committed and expected detail/media
+  counts. The three existing tools and the Streamable HTTP connector are
+  unchanged.
+
+The MCP container needs network reachability to the DSN host. Setting the
+private Radar network path and issuing the read-only role are deployment steps,
+not part of this source change.
 
 ## Deploy
 
@@ -126,6 +164,8 @@ the URL.
 
 - Usage is recorded per identity in the cache database. Inspect it with:
   `sqlite3 /opt/imot-mcp/data/mcp-cache.db 'SELECT identity, tool, cache_hit, datetime(created_at,"unixepoch") FROM usage_log ORDER BY id DESC LIMIT 50;'`
+  `cache_hit=1` means the call consumed no live imot.bg fetch, which includes
+  both MCP cache hits and Radar-served reads.
 - Raise `IMOT_MCP_SEARCH_TTL` to reduce live scraping; raise `IMOT_MCP_MAX_PAGES`
   to widen coverage at the cost of latency per question.
 - If the shared budget trips during heavy use, the endpoint returns a clear

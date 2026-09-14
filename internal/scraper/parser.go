@@ -2,8 +2,10 @@ package scraper
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	stdhtml "html"
+	neturl "net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -41,7 +43,6 @@ var (
 	reDetailPhone       = regexp.MustCompile(`(?s)class="phone[^"]*"[^>]*>(.*?)</div>`)
 	reDetailAgencyURL   = regexp.MustCompile(`(?s)class="url"[^>]*>(.*?)</div>`)
 	reDetailOGURL       = regexp.MustCompile(`property="og:url" content="([^"]+)"`)
-	reDetailPhoto       = regexp.MustCompile(`property="og:image"\s+content="([^"]+)"`)
 	reDetailViewCount   = regexp.MustCompile(`Обявата е посетена\s*<span>\s*([0-9 ]+)\s*</span>\s*пъти`)
 	reDetailCorrectedAt = regexp.MustCompile(`Коригирана в\s*([0-9]{1,2}):([0-9]{2})\s*на\s*([0-9]{1,2})\s+([^,]+),\s*([0-9]{4})\s*год\.`)
 	reDetailPublishedAt = regexp.MustCompile(`Публикувана в\s*([0-9]{1,2}):([0-9]{2})\s*на\s*([0-9]{1,2})\s+([^,<]+),\s*([0-9]{4})\s*год`)
@@ -51,8 +52,17 @@ var (
 	reBrokerPhone       = regexp.MustCompile(`(?s)Брокер:</div>.*?<div class="phone">\s*(?:<small>)?\s*([^<\s][^<]*?)\s*(?:</small>)?\s*</div>`)
 	reAgencyOffice      = regexp.MustCompile(`Офис:\s*([^<\n]+?)\s*(?:</div>|\n)`)
 	reVatNote           = regexp.MustCompile(`Не се начислява ДДС`)
-	reImotPhotoURL      = regexp.MustCompile(`(?i)(?:(?:https?:)?//)?[^"'\s<>]*focus\.bg/imot/photosimotbg/[^"'\s<>]+\.jpg`)
 	reParterDetail      = regexp.MustCompile(`(?i)партер`)
+
+	// Primary advert layout, gallery and structured data. The gallery is the
+	// only place an advert's own photographs are rendered; recommendation cards
+	// elsewhere on the page advertise other adverts. The tag scanner uses
+	// reTagToken/reAttr to walk real markup instead of a page-wide URL scan.
+	reFeaturesHeading = regexp.MustCompile(`(?is)<span[^>]*\bclass\s*=\s*["'][^"']*\bTitle\b[^"']*["'][^>]*>\s*Особености`)
+	reJSONLDScript    = regexp.MustCompile(`(?is)<script[^>]*\btype\s*=\s*["']application/ld\+json["'][^>]*>(.*?)</script>`)
+	reMetaTag         = regexp.MustCompile(`(?is)<meta\b((?:"[^"]*"|'[^']*'|[^>"'])*)>`)
+	reTagToken        = regexp.MustCompile(`(?is)<(/?)([a-zA-Z][a-zA-Z0-9]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>`)
+	reAttr            = regexp.MustCompile(`(?is)(?:^|\s)([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))`)
 
 	// Detail page identity and page-kind evidence. adParams is a separate
 	// container class from params, so it needs its own pattern; the search-page
@@ -1141,6 +1151,7 @@ func ParseDetail(html string) DetailListing {
 	// An empty or unrecognized block proves nothing about the keys it omits.
 	paramsRecognized := false
 	sawFloorKey, sawGasKey, sawTECKey, sawYearKey := false, false, false, false
+	additionalParams := make(map[string]string)
 	if m := reDetailParams.FindStringSubmatch(html); len(m) > 1 {
 		paramsBlockSeen = true
 		params := stripTags(m[1])
@@ -1149,6 +1160,13 @@ func ParseDetail(html string) DetailListing {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
+			}
+			if colon := strings.Index(p, ":"); colon > 0 {
+				label := strings.TrimSpace(p[:colon])
+				value := strings.TrimSpace(p[colon+1:])
+				if label != "" && value != "" {
+					additionalParams[label] = value
+				}
 			}
 			// Seller type
 			if p == "Агенция" || p == "Частно лице" || p == "Частно лицо" {
@@ -1214,6 +1232,9 @@ func ParseDetail(html string) DetailListing {
 				continue
 			}
 		}
+	}
+	if len(additionalParams) > 0 {
+		d.SourceParams = additionalParams
 	}
 
 	setParamsEvidence := func(key, value string, sawKey bool) {
@@ -1347,25 +1368,41 @@ func ParseDetail(html string) DetailListing {
 		d.URL = canonical
 	}
 
-	// 6. Photo URLs from og:image and gallery/CDN references.
-	photos := uniquePhotoURLs(html)
-	if len(photos) > 0 {
+	// 6. Photo URLs. The advert's own photographs are read from its primary
+	// gallery (#rezon-gallery), the identity-matched structured-data offer and
+	// og:image; recommendation cards elsewhere on the page advertise other
+	// adverts. The explicit no-photo placeholder in the primary image position
+	// proves an empty gallery, while a page with no marker at all stays unknown
+	// rather than clearing stored photographs.
+	photos, noPhotoPlaceholder := advertPhotoURLs(html)
+	switch {
+	case len(photos) > 0:
 		d.PhotoURL = photos[0]
 		d.PhotoURLs = photos
 		ev.present(DetailKeyPhotoURLs, photos, DetailReasonPhotoSelector)
-	} else {
-		// The parser has no marker that proves a gallery is empty, so an advert
-		// with no photo selector stays unknown, never verified absence.
+	case noPhotoPlaceholder && recognizedAdvertLayout(html):
+		ev.verifiedAbsent(DetailKeyPhotoURLs, nil, DetailReasonNoPhotoPlaceholder)
+	default:
 		ev.unknown(DetailKeyPhotoURLs, DetailReasonNoSelectorHit)
 	}
 
 	// 7. Feature tags from the "Особености" block. A matched block is not by
 	// itself proof that the advert has no features: changed inner markup renders
 	// tags this parser does not recognize, and treating that as verified absence
-	// cleared stored features. Only a provably empty container is absence.
+	// cleared stored features. A provably empty container, or a complete
+	// recognized advert that rendered no features section at all, is absence.
+	// The features section lives inside the primary advert subtree. When the
+	// page carries that subtree, scope the search to it so a recommendation
+	// card's feature list cannot stand in for this advert's section.
+	featuresScope := html
+	if region, ok := elementInnerHTML(html, func(_, attrs string) bool {
+		return hasClass(attrs, "ad2023")
+	}); ok {
+		featuresScope = region
+	}
 	featuresBlockSeen := false
 	featuresContainerEmpty := false
-	if m := reFeaturesBlock.FindStringSubmatch(html); len(m) > 1 {
+	if m := reFeaturesBlock.FindStringSubmatch(featuresScope); len(m) > 1 {
 		featuresBlockSeen = true
 		seen := make(map[string]bool)
 		for _, item := range reFeatureItem.FindAllStringSubmatch(m[1], -1) {
@@ -1384,6 +1421,7 @@ func ParseDetail(html string) DetailListing {
 		}
 		featuresContainerEmpty = strings.TrimSpace(stripTags(items)) == "" && !strings.Contains(items, "<")
 	}
+	featuresHeadingSeen := reFeaturesHeading.MatchString(featuresScope)
 	switch {
 	case len(d.Features) > 0:
 		ev.present(DetailKeyFeatures, d.Features, DetailReasonFeaturesBlock)
@@ -1392,10 +1430,15 @@ func ParseDetail(html string) DetailListing {
 		// stays null: a non-present entry may not carry a value, and the state
 		// plus reason carry the absence proof.
 		ev.verifiedAbsent(DetailKeyFeatures, nil, DetailReasonFeaturesBlockEmpty)
-	case featuresBlockSeen:
-		// The container exists but its inner markup produced no recognized tag,
-		// so it proves nothing about the advert's features.
+	case featuresBlockSeen || featuresHeadingSeen:
+		// The container exists (or its heading does) but its inner markup
+		// produced no recognized tag, so it proves nothing about the advert's
+		// features.
 		ev.unknown(DetailKeyFeatures, DetailReasonFeaturesUnrecognized)
+	case recognizedAdvertLayout(html):
+		// A complete, identity-verified advert that rendered no features section
+		// advertised no features: the land and parking adverts do this.
+		ev.verifiedAbsent(DetailKeyFeatures, nil, DetailReasonFeaturesAbsent)
 	default:
 		ev.unknown(DetailKeyFeatures, DetailReasonNoSelectorHit)
 	}
@@ -1460,60 +1503,554 @@ func ParseDetail(html string) DetailListing {
 	return d
 }
 
-func normalizePhotoURL(url string) string {
-	url = strings.TrimSpace(url)
-	url = strings.Trim(url, `"'`)
-	if strings.HasPrefix(url, "//") {
-		return "https:" + url
+func normalizePhotoURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.Trim(raw, `"'`)
+	if strings.HasPrefix(raw, "//") {
+		raw = "https:" + raw
+	} else if strings.HasPrefix(raw, "http://") {
+		raw = "https://" + strings.TrimPrefix(raw, "http://")
+	} else if !strings.HasPrefix(raw, "https://") && strings.Contains(raw, "focus.bg/imot/photosimotbg/") {
+		raw = "https://" + strings.TrimPrefix(raw, "/")
 	}
-	if strings.HasPrefix(url, "http://") {
-		return "https://" + strings.TrimPrefix(url, "http://")
+	parsed, err := neturl.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return raw
 	}
-	if strings.HasPrefix(url, "https://") {
-		return url
+	// imot emits both `/509/big1/...` and `/509//big1/...` for the same
+	// photograph. Collapse only repeated slashes in the path so those source
+	// spellings share one identity; query strings remain untouched.
+	for strings.Contains(parsed.Path, "//") {
+		parsed.Path = strings.ReplaceAll(parsed.Path, "//", "/")
 	}
-	if strings.Contains(url, "focus.bg/imot/photosimotbg/") {
-		return "https://" + strings.TrimPrefix(url, "/")
-	}
-	return url
+	return parsed.String()
 }
 
-func uniquePhotoURLs(html string) []string {
-	// Deduplicate by basename: the gallery renders the same image under several
-	// size variants (/big/, /big1/, ...). Keep the largest variant seen for each
-	// image, and never downgrade when a later duplicate is smaller.
-	byBase := make(map[string]string)
-	var order []string
-	add := func(raw string) {
-		url := normalizePhotoURL(raw)
-		if url == "" {
-			return
+// Primary advert layout and photo extraction --------------------------------
+//
+// An imot.bg detail page renders the advert's own content under .ad2023 and
+// several recommendation cards for other adverts elsewhere on the page. Only
+// the primary gallery (#rezon-gallery), the identity-matched structured-data
+// offer and og:image describe this advert, so every photograph is read from
+// those scopes instead of a page-wide URL scan.
+
+// noPhotoPlaceholderURL is imot.bg's explicit "this advert has no photograph"
+// image in the primary image position. Recommendation cards and notification
+// popups render a smaller 490x341 placeholder outside the primary advert
+// subtree; that is not evidence about this advert.
+const noPhotoPlaceholderURL = "https://www.imot.bg/images/picturess/nophoto_660x495.svg"
+
+// Detail evidence reasons for source structures this parser recognizes but the
+// shared reason vocabulary did not name before.
+const (
+	DetailReasonNoPhotoPlaceholder = "no_photo_placeholder"
+	DetailReasonFeaturesAbsent     = "features_absent"
+)
+
+// rawTextElements are elements whose content HTML does not parse as markup. Tag
+// scanning skips them so a script string that looks like a tag cannot be read
+// as page structure.
+var rawTextElements = map[string]bool{
+	"script": true, "style": true, "textarea": true, "title": true,
+}
+
+// voidElements never have children, so a tag scanner must not wait for their
+// closing tag.
+var voidElements = map[string]bool{
+	"area": true, "base": true, "br": true, "col": true, "embed": true,
+	"hr": true, "img": true, "input": true, "link": true, "meta": true,
+	"param": true, "source": true, "track": true, "wbr": true,
+}
+
+// tagToken is one tag found while scanning HTML.
+type tagToken struct {
+	closing   bool
+	selfClose bool
+	name      string
+	attrs     string
+	start     int
+	end       int
+}
+
+// scanTags walks the tags of one HTML fragment in order, skipping comments,
+// declarations and the raw text of script/style/textarea/title. It calls fn for
+// every remaining tag and stops when fn returns false. The result is false when
+// the fragment contains an unterminated comment, declaration or raw-text
+// element, which is how a truncated page stays recognizable.
+func scanTags(html string, fn func(tagToken) bool) bool {
+	i := 0
+	for i < len(html) {
+		lt := strings.IndexByte(html[i:], '<')
+		if lt < 0 {
+			return true
 		}
-		base := photoBasename(url)
-		if existing, ok := byBase[base]; ok {
-			if photoVariantRank(url) <= photoVariantRank(existing) {
-				return
+		i += lt
+		rest := html[i:]
+		switch {
+		case strings.HasPrefix(rest, "<!--"):
+			end := strings.Index(rest[4:], "-->")
+			if end < 0 {
+				return false
 			}
-			byBase[base] = url
-			for i, o := range order {
-				if photoBasename(o) == base {
-					order[i] = url
-					break
+			i += 4 + end + 3
+			continue
+		case strings.HasPrefix(rest, "<!"), strings.HasPrefix(rest, "<?"):
+			end := strings.IndexByte(rest, '>')
+			if end < 0 {
+				return false
+			}
+			i += end + 1
+			continue
+		}
+		m := reTagToken.FindStringSubmatchIndex(rest)
+		if m == nil || m[0] != 0 {
+			i++
+			continue
+		}
+		closing := rest[m[2]:m[3]] == "/"
+		name := strings.ToLower(rest[m[4]:m[5]])
+		attrs := rest[m[6]:m[7]]
+		tagEnd := i + m[1]
+		selfClose := strings.HasSuffix(strings.TrimSpace(rest[:m[1]-1]), "/")
+		if !closing && !selfClose && rawTextElements[name] {
+			end := indexClosingTag(html, tagEnd, name)
+			if end < 0 {
+				return false
+			}
+			i = end
+			continue
+		}
+		if !fn(tagToken{closing: closing, selfClose: selfClose, name: name, attrs: attrs, start: i, end: tagEnd}) {
+			return true
+		}
+		i = tagEnd
+	}
+	return true
+}
+
+// indexClosingTag returns the offset of the first closing tag for name at or
+// after from, or -1 when the raw-text element never closes.
+func indexClosingTag(html string, from int, name string) int {
+	lower := strings.ToLower(html[from:])
+	needle := "</" + name
+	for at := 0; ; {
+		rel := strings.Index(lower[at:], needle)
+		if rel < 0 {
+			return -1
+		}
+		pos := at + rel
+		after := pos + len(needle)
+		if after >= len(lower) {
+			return from + pos
+		}
+		switch lower[after] {
+		case '>', ' ', '\t', '\n', '\r', '/':
+			return from + pos
+		}
+		at = pos + 1
+	}
+}
+
+// attrValue returns one tag attribute's value. Attribute names are matched
+// case-insensitively, as HTML requires; the value keeps its original case.
+func attrValue(attrs, name string) (string, bool) {
+	for _, m := range reAttr.FindAllStringSubmatch(attrs, -1) {
+		if !strings.EqualFold(m[1], name) {
+			continue
+		}
+		switch {
+		case m[2] != "":
+			return m[2], true
+		case m[3] != "":
+			return m[3], true
+		default:
+			return m[4], true
+		}
+	}
+	return "", false
+}
+
+// hasClass reports whether a tag's class attribute carries want as a whole
+// class token, so "ad2023" never matches a longer unrelated class name.
+func hasClass(attrs, want string) bool {
+	value, ok := attrValue(attrs, "class")
+	if !ok {
+		return false
+	}
+	for _, token := range strings.Fields(value) {
+		if token == want {
+			return true
+		}
+	}
+	return false
+}
+
+// idEquals reports whether a tag's id attribute is exactly want.
+func idEquals(attrs, want string) bool {
+	value, ok := attrValue(attrs, "id")
+	return ok && value == want
+}
+
+// elementInnerHTML returns the inner HTML of the first element whose start tag
+// matches. It reports false when the page has no such element or the element
+// never closes, so a truncated page cannot yield a partial region.
+func elementInnerHTML(html string, match func(name, attrs string) bool) (string, bool) {
+	depth := 0
+	root := ""
+	innerStart := -1
+	inner := ""
+	closed := false
+	scanTags(html, func(t tagToken) bool {
+		if depth == 0 {
+			if !t.closing && match(t.name, t.attrs) {
+				if t.selfClose || voidElements[t.name] {
+					closed = true
+					return false
+				}
+				root = t.name
+				innerStart = t.end
+				depth = 1
+			}
+			return true
+		}
+		if t.closing {
+			if t.name == root {
+				depth--
+				if depth == 0 {
+					inner = html[innerStart:t.start]
+					closed = true
+					return false
 				}
 			}
+			return true
+		}
+		if t.name == root && !t.selfClose && !voidElements[t.name] {
+			depth++
+		}
+		return true
+	})
+	return inner, closed
+}
+
+// forEachImg calls fn with every img tag's attributes, skipping script and
+// style content.
+func forEachImg(html string, fn func(attrs string) bool) {
+	scanTags(html, func(t tagToken) bool {
+		if t.closing || t.name != "img" {
+			return true
+		}
+		return fn(t.attrs)
+	})
+}
+
+// ogImageURL returns the page's og:image value, preferring the property
+// attribute and accepting name= for pages that use the older spelling.
+func ogImageURL(html string) string {
+	for _, m := range reMetaTag.FindAllStringSubmatch(html, -1) {
+		property, ok := attrValue(m[1], "property")
+		if !ok {
+			property, _ = attrValue(m[1], "name")
+		}
+		if !strings.EqualFold(strings.TrimSpace(property), "og:image") {
+			continue
+		}
+		if content, ok := attrValue(m[1], "content"); ok {
+			return content
+		}
+	}
+	return ""
+}
+
+// recognizedAdvertLayout reports whether the page is a complete,
+// identity-verified imot.bg advert layout: the page ends normally, carries its
+// own advert identity and renders the .ad2023 > .left primary subtree. Only such
+// a page justifies reading an omitted optional section as the source's absence;
+// an unrecognized or truncated page proves nothing and leaves the field unknown.
+func recognizedAdvertLayout(html string) bool {
+	if _, advertID := advertIdentity(html); advertID == "" {
+		return false
+	}
+	if !strings.Contains(strings.ToLower(html), "</html>") {
+		return false
+	}
+	region, ok := elementInnerHTML(html, func(_, attrs string) bool {
+		return hasClass(attrs, "ad2023")
+	})
+	if !ok {
+		return false
+	}
+	_, ok = elementInnerHTML(region, func(_, attrs string) bool {
+		return hasClass(attrs, "left")
+	})
+	return ok
+}
+
+// primaryNoPhotoPlaceholder reports whether the advert's own primary image
+// position rendered imot.bg's explicit no-photo placeholder.
+func primaryNoPhotoPlaceholder(html string) bool {
+	if og := ogImageURL(html); og != "" && isNoPhotoPlaceholder(og) {
+		return true
+	}
+	region, ok := elementInnerHTML(html, func(_, attrs string) bool {
+		return hasClass(attrs, "ad2023")
+	})
+	if !ok {
+		return false
+	}
+	found := false
+	forEachImg(region, func(attrs string) bool {
+		for _, raw := range imgCandidateURLs(attrs) {
+			if isNoPhotoPlaceholder(raw) {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// isNoPhotoPlaceholder reports whether one raw URL is the explicit primary
+// placeholder.
+func isNoPhotoPlaceholder(raw string) bool {
+	return normalizePhotoURL(raw) == noPhotoPlaceholderURL
+}
+
+// imgCandidateURLs returns the advertised photograph URLs of one img tag in
+// discovery order: the fullscreen gallery attribute, the lazy source, then the
+// eager source. Ranking still decides which variant survives deduplication, so
+// this order only fixes what is discovered.
+func imgCandidateURLs(attrs string) []string {
+	var urls []string
+	for _, name := range []string{"data-src-gallery", "data-src", "src"} {
+		if value, ok := attrValue(attrs, name); ok && strings.TrimSpace(value) != "" {
+			urls = append(urls, value)
+		}
+	}
+	return urls
+}
+
+// galleryPhotoRefs reads the advert's own photograph references from its
+// primary gallery. #rezon-gallery wraps the fullscreen carousel and the small
+// picture list, so both the fullscreen and the advertised small variants are
+// read; recommendation cards and notification popups live outside it. Script
+// content is skipped by the scanner and promo labels are not photographs.
+func galleryPhotoRefs(html string) []string {
+	gallery, ok := elementInnerHTML(html, func(_, attrs string) bool {
+		return idEquals(attrs, "rezon-gallery")
+	})
+	if !ok {
+		return nil
+	}
+	var refs []string
+	forEachImg(gallery, func(attrs string) bool {
+		if hasClass(attrs, "promo") {
+			return true
+		}
+		refs = append(refs, imgCandidateURLs(attrs)...)
+		return true
+	})
+	return refs
+}
+
+// jsonLDPhotoRefs returns the photographs advertised by the page's structured
+// data, but only when the block's own identity proves it describes this advert.
+// A JSON-LD block for another advert, or one declaring conflicting advert
+// numbers, contributes nothing.
+func jsonLDPhotoRefs(html, advertID string) []string {
+	if advertID == "" {
+		return nil
+	}
+	var refs []string
+	for _, m := range reJSONLDScript.FindAllStringSubmatch(html, -1) {
+		var doc any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(m[1])), &doc); err != nil {
+			continue
+		}
+		if !jsonLDIdentityMatches(doc, advertID) {
+			continue
+		}
+		walkJSONLD(doc, func(key string, value any) {
+			if key == "image" {
+				addJSONLDImage(value, &refs)
+			}
+		})
+	}
+	return refs
+}
+
+// jsonLDIdentityMatches reports whether every advert number a structured-data
+// document declares under url/sku is the page's own advert number, and that it
+// declares at least one. The product name is deliberately not consulted: a sale
+// advert whose JSON-LD label says "Дава под Наем" still owns its photographs.
+func jsonLDIdentityMatches(doc any, advertID string) bool {
+	seen := 0
+	matched := true
+	walkJSONLD(doc, func(key string, value any) {
+		if key != "url" && key != "sku" {
 			return
 		}
-		byBase[base] = url
-		order = append(order, url)
+		text, ok := value.(string)
+		if !ok {
+			return
+		}
+		id := AdvertIDFromURL(text)
+		if id == "" {
+			return
+		}
+		seen++
+		if id != advertID {
+			matched = false
+		}
+	})
+	return seen > 0 && matched
+}
+
+// addJSONLDImage appends the URL forms of one schema.org image value: a URL
+// string, a list of them, or an ImageObject with url/contentUrl.
+func addJSONLDImage(value any, refs *[]string) {
+	switch v := value.(type) {
+	case string:
+		*refs = append(*refs, v)
+	case []any:
+		for _, item := range v {
+			addJSONLDImage(item, refs)
+		}
+	case map[string]any:
+		for _, key := range []string{"url", "contentUrl"} {
+			if text, ok := v[key].(string); ok {
+				*refs = append(*refs, text)
+				return
+			}
+		}
+	}
+}
+
+// walkJSONLD visits every key/value pair of a decoded JSON document.
+func walkJSONLD(value any, visit func(key string, value any)) {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, child := range v {
+			visit(key, child)
+			walkJSONLD(child, visit)
+		}
+	case []any:
+		for _, child := range v {
+			walkJSONLD(child, visit)
+		}
+	}
+}
+
+// advertPhotoURLs collects the advert's own photographs together with every
+// advertised size variant. Photographs are grouped by identity (the URL
+// basename) and each group is ordered fullscreen-first, so the largest
+// advertised variant leads and the source's own smaller variants remain as
+// fallbacks. Identities keep the order the page first presented them: primary
+// gallery slides, then the identity-matched advertised offer list, then the
+// og:image social fallback. The second result reports the explicit primary
+// no-photo placeholder.
+func advertPhotoURLs(html string) ([]string, bool) {
+	_, advertID := advertIdentity(html)
+
+	type photoVariants struct {
+		urls []string
+		seen map[string]bool
+	}
+	var identityOrder []string
+	groups := make(map[string]*photoVariants)
+	add := func(raw string) {
+		url := normalizePhotoURL(raw)
+		if !isSupportedPhotoURL(url) {
+			return
+		}
+		identity := photoBasename(url)
+		if identity == "" {
+			return
+		}
+		group, ok := groups[identity]
+		if !ok {
+			group = &photoVariants{seen: make(map[string]bool)}
+			groups[identity] = group
+			identityOrder = append(identityOrder, identity)
+		}
+		if group.seen[url] {
+			return
+		}
+		group.seen[url] = true
+		// Insert the variant so the largest advertised size leads. Equal ranks
+		// keep their discovery order.
+		rank := photoVariantRank(url)
+		at := len(group.urls)
+		for i, existing := range group.urls {
+			if rank > photoVariantRank(existing) {
+				at = i
+				break
+			}
+		}
+		group.urls = append(group.urls, "")
+		copy(group.urls[at+1:], group.urls[at:])
+		group.urls[at] = url
 	}
 
-	if m := reDetailPhoto.FindStringSubmatch(html); len(m) > 1 {
-		add(m[1])
-	}
-	for _, raw := range reImotPhotoURL.FindAllString(html, -1) {
+	for _, raw := range galleryPhotoRefs(html) {
 		add(raw)
 	}
-	return order
+	for _, raw := range jsonLDPhotoRefs(html, advertID) {
+		add(raw)
+	}
+	if og := ogImageURL(html); og != "" {
+		add(og)
+	}
+
+	if len(identityOrder) == 0 {
+		return nil, primaryNoPhotoPlaceholder(html)
+	}
+	photos := make([]string, 0, len(identityOrder))
+	for _, identity := range identityOrder {
+		photos = append(photos, groups[identity].urls...)
+	}
+	return photos, false
+}
+
+// uniquePhotoURLs keeps its original entry point for callers that only want the
+// photograph list. It now returns the scoped, identity-safe collection, with
+// each photograph's advertised variants grouped fullscreen-first; the explicit
+// no-photo placeholder is reported by advertPhotoURLs.
+func uniquePhotoURLs(html string) []string {
+	photos, _ := advertPhotoURLs(html)
+	return photos
+}
+
+// supportedPhotoExtensions are the advertised gallery formats this parser
+// accepts. The .pic suffix is imot.bg's legacy photograph endpoint and is
+// returned by the fullscreen gallery alongside the regular image suffixes.
+// SVG is deliberately absent: imot.bg uses it for the no-photo placeholder
+// and for interface icons, never for an advert photograph.
+var supportedPhotoExtensions = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".pic": true,
+}
+
+// isSupportedPhotoURL reports whether one advertised URL is an absolute
+// http(s) reference to a supported photograph format. imot.bg's own interface
+// artwork (placeholders, promo labels, notification icons) lives under
+// /images/picturess/ and is never an advertised photograph.
+func isSupportedPhotoURL(url string) bool {
+	lower := strings.ToLower(url)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		return false
+	}
+	if strings.Contains(lower, "/images/picturess/") {
+		return false
+	}
+	path := lower
+	if i := strings.IndexAny(path, "?#"); i >= 0 {
+		path = path[:i]
+	}
+	dot := strings.LastIndexByte(path, '.')
+	if dot < 0 {
+		return false
+	}
+	return supportedPhotoExtensions[path[dot:]]
 }
 
 // decorativeEntities are numeric entities imot.bg bakes into listing text as
@@ -1530,26 +2067,36 @@ var decorativeEntities = strings.NewReplacer(
 	"&#128222;", "", // telephone
 )
 
-// photoVariantRank scores the size variant of a photosimotbg image URL: a
-// larger number is a larger image. /big/ is the og:image/social source and
-// outranks the /big1/ gallery render; an unmarked URL is treated as a thumbnail.
-// Ranking (rather than a one-off /big1/ swap) keeps the choice monotonic: a
-// later duplicate only replaces the stored URL when it is strictly larger.
+// photoVariantRank scores the size variant of a photograph URL: a larger
+// number is a larger image. Live pages measured the same photograph as 800x354
+// at /big/ and 1600x708 at /big1/, so the fullscreen /big1/ gallery render
+// outranks the /big/ social image; an unmarked URL is a thumbnail. Ranking
+// (rather than a one-off /big1/ swap) keeps the choice monotonic: a later
+// duplicate only replaces the stored URL when it is strictly larger.
 func photoVariantRank(url string) int {
+	lower := strings.ToLower(url)
 	switch {
-	case strings.Contains(url, "/big/"):
+	case strings.Contains(lower, "/big1/"):
 		return 3
-	case strings.Contains(url, "/big1/"):
+	case strings.Contains(lower, "/big/") || strings.Contains(lower, "/big2/"):
 		return 2
 	default:
-		return 0
+		return 1
 	}
 }
 
-// photoBasename extracts a stable per-image key from a photosimotbg URL,
-// e.g. ".../2/768//big/2c178773245606768_e1.jpg" -> "2c178773245606768_e1.jpg".
+// photoBasename extracts the stable photograph identity from a photograph URL,
+// e.g. ".../2/768//big1/2c178773245606768_e1.jpg" -> "2c178773245606768_e1.jpg".
+// Every size variant of one photograph shares this basename, so it is the dedup
+// key; the CDN host and the variant directory are deliberately not part of it,
+// because the same image is advertised from several CDN hosts. The name is kept
+// case-sensitive: CDN paths are case-sensitive, and two photographs can differ
+// by case alone.
 func photoBasename(url string) string {
-	if i := strings.LastIndex(url, "/"); i >= 0 {
+	if i := strings.IndexAny(url, "?#"); i >= 0 {
+		url = url[:i]
+	}
+	if i := strings.LastIndexByte(url, '/'); i >= 0 {
 		return url[i+1:]
 	}
 	return url

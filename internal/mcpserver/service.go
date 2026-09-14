@@ -70,18 +70,24 @@ type QuerySummary struct {
 
 // SearchListingsOutput is the result of search_listings.
 type SearchListingsOutput struct {
-	Query         QuerySummary        `json:"query"`
-	Stats         scraper.SearchStats `json:"stats" jsonschema:"price distribution for the returned listings"`
-	Listings      []ListingSummary    `json:"listings"`
-	TotalMatching int                 `json:"total_matching" jsonschema:"listings imot.bg reports for this query, which may exceed the returned count"`
-	Returned      int                 `json:"returned"`
-	PagesFetched  int                 `json:"pages_fetched"`
-	Sampled       bool                `json:"sampled" jsonschema:"true when fewer listings were returned than match the query"`
-	Partial       bool                `json:"partial" jsonschema:"true when some result pages failed to load"`
-	Source        string              `json:"source" jsonschema:"cache or live"`
-	FetchedAt     string              `json:"fetched_at" jsonschema:"RFC3339 timestamp of when the data was scraped"`
-	AgeSeconds    int                 `json:"age_seconds" jsonschema:"age of the data in seconds"`
-	Notes         []string            `json:"notes,omitempty"`
+	Query            QuerySummary        `json:"query"`
+	Stats            scraper.SearchStats `json:"stats" jsonschema:"price distribution for the returned listings"`
+	Listings         []ListingSummary    `json:"listings"`
+	TotalMatching    int                 `json:"total_matching" jsonschema:"the source population for this query before any client-side price/size filters, so it can exceed the returned count"`
+	FilteredMatching int                 `json:"filtered_matching,omitempty" jsonschema:"when client-side price/size filters were applied, the count that satisfies them"`
+	Returned         int                 `json:"returned"`
+	PagesFetched     int                 `json:"pages_fetched"`
+	Sampled          bool                `json:"sampled" jsonschema:"true when fewer listings were returned than match the query"`
+	Partial          bool                `json:"partial" jsonschema:"true when some result pages failed to load"`
+	Source           string              `json:"source" jsonschema:"radar, radar_stale, cache or live. live is the labelled fallback outside Radar coverage."`
+	Coverage         string              `json:"coverage" jsonschema:"complete, partial, stale, never_collected, out_of_scope or unavailable. Never read a non-complete coverage as a verified empty market."`
+	Readiness        *RadarReadiness     `json:"readiness,omitempty" jsonschema:"detail and media enrichment state with committed and expected counts; present for Radar answers"`
+	ObservedAt       string              `json:"observed_at" jsonschema:"RFC3339 time the market data was observed; empty when unknown"`
+	EmptyVerified    bool                `json:"empty_verified" jsonschema:"true only when a complete source explicitly verified zero matches"`
+	ClientFilters    []string            `json:"client_filters,omitempty" jsonschema:"price/size filters applied to downloaded listings because the source URL cannot carry them"`
+	FetchedAt        string              `json:"fetched_at" jsonschema:"RFC3339 timestamp of when this answer was produced"`
+	AgeSeconds       int                 `json:"age_seconds" jsonschema:"age of the data in seconds"`
+	Notes            []string            `json:"notes,omitempty"`
 }
 
 // GetListingInput is the argument shape for get_listing.
@@ -96,10 +102,18 @@ type GetListingOutput struct {
 	ListingID  string                 `json:"listing_id"`
 	URL        string                 `json:"url"`
 	Detail     *scraper.DetailListing `json:"detail,omitempty"`
-	Source     string                 `json:"source"`
+	Source     string                 `json:"source" jsonschema:"radar, radar_stale, cache, live or none"`
+	Coverage   string                 `json:"coverage" jsonschema:"complete, partial, stale, never_collected, out_of_scope or unavailable"`
+	Readiness  *RadarReadiness        `json:"readiness,omitempty" jsonschema:"detail and media enrichment state with committed and expected counts; present for Radar answers"`
+	ObservedAt string                 `json:"observed_at" jsonschema:"RFC3339 time the listing was last observed; empty when unknown"`
 	FetchedAt  string                 `json:"fetched_at"`
 	AgeSeconds int                    `json:"age_seconds"`
 	Notes      []string               `json:"notes,omitempty"`
+
+	// ScopeSlug records the Radar catalogue slug a Radar-served detail belongs
+	// to, so a cached answer can rebase its coverage claim against the current
+	// catalogue state without refetching the listing. Empty for live answers.
+	ScopeSlug string `json:"scope_slug,omitempty"`
 }
 
 // ListFiltersInput takes no arguments.
@@ -118,19 +132,31 @@ type Service struct {
 	cache    *Cache
 	limiter  *Limiter
 	client   *scraper.Client
+	radar    RadarReader
 	logger   *slog.Logger
 	identity string
+
+	// Test seams: the live source calls are injectable so a test can prove a
+	// Radar answer made zero imot.bg requests without touching the network.
+	searchLive      func(scraper.SearchParams) (scraper.SearchResult, error)
+	fetchLiveDetail func(listings []scraper.Listing) []error
+	now             func() time.Time
 }
 
 // newService builds the tool layer for one identity.
-func newService(cfg Config, cache *Cache, limiter *Limiter, identity string, logger *slog.Logger) *Service {
+func newService(cfg Config, cache *Cache, limiter *Limiter, radar RadarReader, identity string, logger *slog.Logger) *Service {
+	client := scraper.NewClient()
 	return &Service{
-		cfg:      cfg,
-		cache:    cache,
-		limiter:  limiter,
-		client:   scraper.NewClient(),
-		logger:   logger,
-		identity: identity,
+		cfg:             cfg,
+		cache:           cache,
+		limiter:         limiter,
+		client:          client,
+		radar:           radar,
+		logger:          logger,
+		identity:        identity,
+		searchLive:      client.SearchWithMeta,
+		fetchLiveDetail: client.FetchDetailsConcurrent,
+		now:             time.Now,
 	}
 }
 
@@ -174,27 +200,119 @@ func (s *Service) SearchListings(ctx context.Context, in SearchListingsInput) (S
 		MaxSizeSqM:   params.MaxSqM,
 		Pages:        params.Pages,
 	}
-	key := searchKey(params)
+	// Resolve the serving scope before the cache lookup so a Radar answer and a
+	// live fallback answer can never share a cache entry.
+	scope := RadarScope{Reason: ScopeReasonRadarNotConfigured}
+	var scopeErr error
+	if s.radar != nil {
+		scope, scopeErr = s.radar.ResolveScope(ctx, city, params.Neighborhood, params.Rent)
+		if scopeErr != nil {
+			s.logger.Warn("radar scope resolution failed; serving the labelled live fallback", "error", scopeErr)
+		}
+	}
+	key := searchKey(servingMode(scope, scopeErr, params.Neighborhood), params, limit)
 
 	if !in.Refresh {
-		if payload, createdAt, ok, err := s.cache.GetSearch(key, s.cfg.SearchCacheTTL); err != nil {
-			s.logger.Warn("search cache read failed", "error", err)
-		} else if ok {
-			var cached SearchListingsOutput
-			if err := json.Unmarshal(payload, &cached); err == nil {
-				s.record(ToolSearchListings, true, time.Since(started), len(cached.Listings))
-				cached.Source = "cache"
-				cached.AgeSeconds = int(time.Since(createdAt).Seconds())
-				cached.FetchedAt = createdAt.UTC().Format(time.RFC3339)
-				cached.Listings = truncateListings(cached.Listings, limit)
-				cached.Returned = len(cached.Listings)
-				cached.Notes = refreshNotes(cached, true)
-				return cached, nil
+		if cached, createdAt, ok := s.cachedSearch(key, s.cfg.SearchCacheTTL); ok {
+			out := s.serveCachedSearch(cached, createdAt, limit)
+			// Scope metadata is authoritative at read time. A cached Radar
+			// payload must not preserve a formerly complete/empty claim after
+			// the catalogue receipt has become partial or invalid.
+			if scopeErr == nil && scope.InScope {
+				out.Coverage = scope.Coverage
+				out.EmptyVerified = scope.Coverage == CoverageComplete && out.TotalMatching == 0
 			}
-			s.logger.Warn("search cache payload was unreadable; refetching")
+			s.record(ToolSearchListings, true, time.Since(started), out.Returned)
+			return out, nil
 		}
 	}
 
+	if s.radar != nil && scopeErr == nil && scope.InScope {
+		full, err := s.radarSearch(ctx, query, scope, params, limit)
+		if err == nil {
+			// Store the full envelope, never a truncated one: a later caller with
+			// a larger limit must be able to recover every fetched listing.
+			s.storeSearch(key, full)
+			out := truncateSearchOutput(full, limit)
+			out.Notes = append(out.Notes, refreshNotes(out, false)...)
+			s.record(ToolSearchListings, true, time.Since(started), out.Returned)
+			return out, nil
+		}
+		s.logger.Warn("radar search failed; trying the cached Radar answer before the live fallback", "error", err, "scope", scope.Slug)
+		if cached, createdAt, ok := s.cachedSearch(key, 0); ok {
+			out := s.serveCachedSearch(cached, createdAt, limit)
+			out.Source = SourceCache
+			out.Coverage = CoverageStale
+			out.EmptyVerified = false
+			out.Notes = append(out.Notes, "Market Radar is currently unreachable; serving the last cached Radar answer.")
+			s.record(ToolSearchListings, true, time.Since(started), out.Returned)
+			return out, nil
+		}
+		scopeErr = err
+	}
+
+	full, err := s.liveSearch(ctx, query, scope, scopeErr, params)
+	if err != nil {
+		s.record(ToolSearchListings, false, time.Since(started), 0)
+		return SearchListingsOutput{}, err
+	}
+	// If Radar was unavailable, keep the live fallback in its own cache
+	// namespace. Otherwise a later Radar refresh failure could replay this live
+	// payload as if it were stale Radar data.
+	storeKey := key
+	if scopeErr != nil {
+		storeKey = searchKey(servingMode(scope, scopeErr, params.Neighborhood), params, limit)
+	}
+	s.storeSearch(storeKey, full)
+	out := truncateSearchOutput(full, limit)
+	out.Notes = append(out.Notes, refreshNotes(out, false)...)
+	s.record(ToolSearchListings, false, time.Since(started), out.Returned)
+	return out, nil
+}
+
+// radarSearch serves an in-scope query from the authoritative store. It never
+// touches imot.bg, so a fresh Radar hit costs zero source requests.
+func (s *Service) radarSearch(ctx context.Context, query QuerySummary, scope RadarScope, params scraper.SearchParams, limit int) (SearchListingsOutput, error) {
+	result, err := s.radar.SearchListings(ctx, RadarSearchQuery{
+		Scope:        scope,
+		PropertyType: params.Type,
+		MinPriceEUR:  params.MinPrice,
+		MaxPriceEUR:  params.MaxPrice,
+		MinSizeSqM:   params.MinSqM,
+		MaxSizeSqM:   params.MaxSqM,
+		Limit:        limit,
+	})
+	if err != nil {
+		return SearchListingsOutput{}, err
+	}
+	now := s.now().UTC()
+	source := SourceRadar
+	if scope.Coverage == CoverageStale {
+		source = SourceRadarStale
+	}
+	out := SearchListingsOutput{
+		Query:         query,
+		Stats:         scraper.ComputeStats(toRadarListings(result.Listings)),
+		Listings:      toRadarSummaries(result.Listings),
+		TotalMatching: result.Total,
+		Returned:      len(result.Listings),
+		PagesFetched:  1,
+		Sampled:       result.Total > len(result.Listings),
+		Source:        source,
+		Coverage:      scope.Coverage,
+		Readiness:     &result.Readiness,
+		ObservedAt:    formatObservedAt(result.ObservedAt),
+		EmptyVerified: scope.Coverage == CoverageComplete && result.Total == 0,
+		FetchedAt:     now.Format(time.RFC3339),
+	}
+	return out, nil
+}
+
+// liveSearch is the legacy path, kept for rentals and scopes outside the Radar
+// catalogue (and as a labelled last resort when Radar is unreachable). Price
+// and area bounds are applied here in Go because the imot.bg request URL carries
+// no such parameters: the previous code echoed them without applying them.
+func (s *Service) liveSearch(ctx context.Context, query QuerySummary, scope RadarScope, scopeErr error, params scraper.SearchParams) (SearchListingsOutput, error) {
 	if err := s.authorizeLive(ToolSearchListings); err != nil {
 		return SearchListingsOutput{}, err
 	}
@@ -204,37 +322,52 @@ func (s *Service) SearchListings(ctx context.Context, in SearchListingsInput) (S
 	}
 	defer release()
 
-	result, err := s.client.SearchWithMeta(params)
+	result, err := s.searchLive(params)
 	if err != nil {
-		s.record(ToolSearchListings, false, time.Since(started), 0)
 		return SearchListingsOutput{}, fmt.Errorf("live search failed: %w", err)
 	}
 
-	out := SearchListingsOutput{
-		Query:         query,
-		Listings:      toSummaries(result.Listings),
-		Stats:         scraper.ComputeStats(result.Listings),
-		TotalMatching: result.TotalCount,
-		PagesFetched:  result.PagesFetched,
-		Partial:       result.Partial,
-		Source:        "live",
-		FetchedAt:     time.Now().UTC().Format(time.RFC3339),
+	listings := filterListingsByRange(result.Listings, params)
+	now := s.now().UTC()
+	coverage := CoverageOutOfScope
+	var notes []string
+	if scopeErr != nil {
+		coverage = CoverageUnavailable
+		notes = append(notes, "Market Radar is currently unreachable; this answer is the live imot.bg fallback and is not Radar coverage.")
+	} else if note := scopeReasonNote(scope.Reason); note != "" {
+		notes = append(notes, note)
 	}
-	out.Listings = truncateListings(out.Listings, limit)
-	out.Returned = len(out.Listings)
-	out.Sampled = out.TotalMatching > out.Returned
-	out.Notes = refreshNotes(out, false)
+	filtersApplied := len(liveClientFilterNames(params)) > 0
+	filteredMatching := 0
+	if filtersApplied {
+		filteredMatching = len(listings)
+	}
 
-	if payload, err := json.Marshal(out); err == nil {
-		if err := s.cache.PutSearch(key, payload, len(out.Listings)); err != nil {
-			s.logger.Warn("search cache write failed", "error", err)
-		}
+	out := SearchListingsOutput{
+		Query:            query,
+		Stats:            scraper.ComputeStats(listings),
+		Listings:         toSummaries(listings),
+		TotalMatching:    result.TotalCount,
+		FilteredMatching: filteredMatching,
+		Returned:         len(listings),
+		PagesFetched:     result.PagesFetched,
+		Sampled:          result.TotalCount > len(listings),
+		Partial:          result.Partial,
+		Source:           SourceLive,
+		Coverage:         coverage,
+		ObservedAt:       now.Format(time.RFC3339),
+		EmptyVerified:    result.EmptyVerified,
+		ClientFilters:    liveClientFilterNames(params),
+		FetchedAt:        now.Format(time.RFC3339),
 	}
-	s.record(ToolSearchListings, false, time.Since(started), out.Returned)
+	// Only the scope explanation is stored; freshness and sampling notes are
+	// recomputed for whichever limit serves this payload.
+	out.Notes = notes
 	return out, nil
 }
 
-// GetListing returns one listing's detail page data, cache first.
+// GetListing returns one listing's detail, Radar first and the labelled live
+// page as the fallback when Radar does not have the advert.
 func (s *Service) GetListing(ctx context.Context, in GetListingInput) (GetListingOutput, error) {
 	started := time.Now()
 
@@ -256,31 +389,66 @@ func (s *Service) GetListing(ctx context.Context, in GetListingInput) (GetListin
 	if in.IncludeDetail != nil {
 		includeDetail = *in.IncludeDetail
 	}
+	now := s.now().UTC()
 	if !includeDetail {
 		return GetListingOutput{
-			ListingID: id,
-			URL:       url,
-			Source:    "none",
-			FetchedAt: time.Now().UTC().Format(time.RFC3339),
-			Notes:     []string{"Detail was not requested; call again with include_detail true for description, features and contacts."},
+			ListingID:  id,
+			URL:        url,
+			Source:     SourceNone,
+			Coverage:   CoverageOutOfScope,
+			ObservedAt: now.Format(time.RFC3339),
+			FetchedAt:  now.Format(time.RFC3339),
+			Notes:      []string{"Detail was not requested; call again with include_detail true for description, features and contacts."},
 		}, nil
 	}
 
+	// A recent Radar answer stays authoritative and cheap.
+	if s.radar != nil && !in.Refresh {
+		if payload, fetchedAt, ok, err := s.cache.GetDetail(radarDetailKey(id), s.cfg.DetailCacheTTL); err != nil {
+			s.logger.Warn("radar detail cache read failed", "error", err)
+		} else if ok {
+			if cached, ok := decodeDetailOutput(payload); ok {
+				s.rebaseDetailCoverage(ctx, &cached)
+				s.record(ToolGetListing, true, time.Since(started), 1)
+				return serveCachedDetail(cached, fetchedAt, now), nil
+			}
+			s.logger.Warn("radar detail cache payload was unreadable; refetching")
+		}
+	}
+
+	radarUnavailable := false
+	if s.radar != nil {
+		listing, found, err := s.radar.GetListing(ctx, id)
+		switch {
+		case err != nil:
+			radarUnavailable = true
+			s.logger.Warn("radar detail read failed; trying the cached Radar copy", "error", err)
+			if payload, fetchedAt, ok, _ := s.cache.GetDetail(radarDetailKey(id), 0); ok {
+				if cached, ok := decodeDetailOutput(payload); ok {
+					out := serveCachedDetail(cached, fetchedAt, now)
+					out.Coverage = CoverageStale
+					out.Notes = append(out.Notes, "Market Radar is currently unreachable; serving the last cached Radar detail.")
+					s.record(ToolGetListing, true, time.Since(started), 1)
+					return out, nil
+				}
+			}
+		case found:
+			out := radarDetailOutput(listing, id, url, now)
+			s.storeDetail(radarDetailKey(id), out)
+			s.record(ToolGetListing, true, time.Since(started), 1)
+			return out, nil
+		}
+	}
+
+	// A recent live answer remains valid and keeps repeat calls off both
+	// networks. It keeps the source and coverage recorded when it was fetched.
 	if !in.Refresh {
-		if payload, fetchedAt, ok, err := s.cache.GetDetail(id, s.cfg.DetailCacheTTL); err != nil {
+		if payload, fetchedAt, ok, err := s.cache.GetDetail(liveDetailKey(id), s.cfg.DetailCacheTTL); err != nil {
 			s.logger.Warn("detail cache read failed", "error", err)
 		} else if ok {
-			var detail scraper.DetailListing
-			if err := json.Unmarshal(payload, &detail); err == nil {
+			if cached, ok := decodeDetailOutput(payload); ok {
 				s.record(ToolGetListing, true, time.Since(started), 1)
-				return GetListingOutput{
-					ListingID:  id,
-					URL:        firstNonEmpty(detail.URL, url),
-					Detail:     &detail,
-					Source:     "cache",
-					FetchedAt:  fetchedAt.UTC().Format(time.RFC3339),
-					AgeSeconds: int(time.Since(fetchedAt).Seconds()),
-				}, nil
+				return serveCachedDetail(cached, fetchedAt, now), nil
 			}
 			s.logger.Warn("detail cache payload was unreadable; refetching")
 		}
@@ -299,7 +467,7 @@ func (s *Service) GetListing(ctx context.Context, in GetListingInput) (GetListin
 	// (about 2s) rather than the 8s single-detail delay, which matters for an
 	// interactive tool call.
 	listings := []scraper.Listing{{ID: id, URL: url}}
-	errs := s.client.FetchDetailsConcurrent(listings)
+	errs := s.fetchLiveDetail(listings)
 	s.record(ToolGetListing, false, time.Since(started), 1)
 
 	if len(errs) > 0 && errs[0] != nil {
@@ -310,19 +478,283 @@ func (s *Service) GetListing(ctx context.Context, in GetListingInput) (GetListin
 	}
 
 	detail := *listings[0].Detail
-	now := time.Now().UTC()
-	if payload, err := json.Marshal(detail); err == nil {
-		if err := s.cache.PutDetail(id, payload); err != nil {
-			s.logger.Warn("detail cache write failed", "error", err)
-		}
+	out := s.liveDetailOutput(id, url, detail, now, radarUnavailable)
+	s.storeDetail(liveDetailKey(id), out)
+	return out, nil
+}
+
+// rebaseDetailCoverage renews a cached Radar detail's coverage claim against
+// the current catalogue state. Scope metadata is authoritative at read time: a
+// receipt that has since become invalid or stale must not keep advertising a
+// formerly complete listing as fresh. An unreachable reader keeps the cached
+// label untouched rather than turning a served answer into an error.
+func (s *Service) rebaseDetailCoverage(ctx context.Context, cached *GetListingOutput) {
+	if s.radar == nil || strings.TrimSpace(cached.ScopeSlug) == "" {
+		return
 	}
-	return GetListingOutput{
-		ListingID: id,
-		URL:       firstNonEmpty(detail.URL, url),
-		Detail:    &detail,
-		Source:    "live",
-		FetchedAt: now.Format(time.RFC3339),
-	}, nil
+	scope, err := s.radar.ResolveScope(ctx, radarCoverageCity, cached.ScopeSlug, false)
+	if err != nil {
+		s.logger.Warn("radar scope rebase failed; keeping the cached coverage label", "error", err)
+		return
+	}
+	if scope.InScope {
+		cached.Coverage = scope.Coverage
+		return
+	}
+	cached.Coverage = CoverageOutOfScope
+	cached.Notes = append(cached.Notes, "This listing's neighbourhood is no longer in the active Market Radar catalogue; coverage is out of scope.")
+}
+
+// radarDetailOutput builds the MCP envelope for an authoritative Radar detail.
+func radarDetailOutput(listing RadarListing, requestedID, fallbackURL string, now time.Time) GetListingOutput {
+	detail := listing.toDetailListing()
+	source := SourceRadar
+	if listing.Coverage == CoverageStale {
+		source = SourceRadarStale
+	}
+	readiness := readinessForListing(listing)
+	out := GetListingOutput{
+		ListingID:  firstNonEmpty(listing.AdvID, requestedID),
+		URL:        firstNonEmpty(detail.URL, fallbackURL),
+		Detail:     &detail,
+		Source:     source,
+		Coverage:   listing.Coverage,
+		Readiness:  &readiness,
+		ObservedAt: formatObservedAt(listing.LastSeenAt),
+		FetchedAt:  now.Format(time.RFC3339),
+		ScopeSlug:  listing.Neighborhood,
+	}
+	switch {
+	case readiness.DetailState != "complete":
+		out.Notes = append(out.Notes, "Market Radar has this listing, but its detail enrichment is "+readiness.DetailState+"; description, features or contacts may be incomplete.")
+	case readiness.MediaState != "complete":
+		out.Notes = append(out.Notes, "Market Radar has this listing, but its photo enrichment is "+readiness.MediaState+"; the gallery may be incomplete.")
+	}
+	if listing.Coverage != CoverageComplete && listing.Coverage != "" {
+		out.Notes = append(out.Notes, "This listing's neighbourhood coverage is "+listing.Coverage+"; the listing may not reflect the current market.")
+	}
+	return out
+}
+
+// liveDetailOutput builds the MCP envelope for a live imot.bg detail, labelled
+// as the fallback it is.
+func (s *Service) liveDetailOutput(id, fallbackURL string, detail scraper.DetailListing, now time.Time, radarUnavailable bool) GetListingOutput {
+	out := GetListingOutput{
+		ListingID:  id,
+		URL:        firstNonEmpty(detail.URL, fallbackURL),
+		Detail:     &detail,
+		Source:     SourceLive,
+		Coverage:   CoverageOutOfScope,
+		ObservedAt: now.Format(time.RFC3339),
+		FetchedAt:  now.Format(time.RFC3339),
+	}
+	switch {
+	case radarUnavailable:
+		out.Coverage = CoverageUnavailable
+		out.Notes = []string{"Market Radar was unreachable; this detail is the live imot.bg page, not Radar data."}
+	case s.radar != nil:
+		out.Notes = []string{"This listing is not in the Market Radar catalogue; this detail is the live imot.bg page."}
+	}
+	return out
+}
+
+// serveCachedDetail relabels a cached detail envelope without rewriting its
+// stored coverage, readiness or observation time.
+func serveCachedDetail(cached GetListingOutput, fetchedAt, now time.Time) GetListingOutput {
+	cached.Source = SourceCache
+	cached.AgeSeconds = int(now.Sub(fetchedAt).Seconds())
+	cached.FetchedAt = fetchedAt.UTC().Format(time.RFC3339)
+	return cached
+}
+
+// cachedSearch returns a decoded search envelope. ttl 0 means any age, which is
+// how an unreachable Radar reuses its last known answer instead of returning an
+// empty market.
+func (s *Service) cachedSearch(key string, ttl time.Duration) (SearchListingsOutput, time.Time, bool) {
+	payload, createdAt, ok, err := s.cache.GetSearch(key, ttl)
+	if err != nil {
+		s.logger.Warn("search cache read failed", "error", err)
+		return SearchListingsOutput{}, time.Time{}, false
+	}
+	if !ok {
+		return SearchListingsOutput{}, time.Time{}, false
+	}
+	var cached SearchListingsOutput
+	if err := json.Unmarshal(payload, &cached); err != nil {
+		s.logger.Warn("search cache payload was unreadable; refetching")
+		return SearchListingsOutput{}, time.Time{}, false
+	}
+	return cached, createdAt, true
+}
+
+// serveCachedSearch projects a cached payload for one request. It only ever
+// truncates the response copy and recomputes the fields derived from the
+// returned rows; the stored payload and its total are untouched.
+func (s *Service) serveCachedSearch(cached SearchListingsOutput, createdAt time.Time, limit int) SearchListingsOutput {
+	prefix := cached.Notes
+	out := cached
+	out.Source = SourceCache
+	out.AgeSeconds = int(s.now().Sub(createdAt).Seconds())
+	out.FetchedAt = createdAt.UTC().Format(time.RFC3339)
+	if out.Coverage == CoverageComplete && s.observationStale(out.ObservedAt) {
+		out.Coverage = CoverageStale
+		// A cached complete zero-match response is no longer a verified empty
+		// market once its observation has gone stale.
+		out.EmptyVerified = false
+	}
+	out = truncateSearchOutput(out, limit)
+	out.Notes = append(prefix, refreshNotes(out, true)...)
+	return out
+}
+
+// storeSearch writes the full, untruncated envelope so pagination or a smaller
+// limit can never shrink the cached population.
+func (s *Service) storeSearch(key string, out SearchListingsOutput) {
+	payload, err := json.Marshal(out)
+	if err != nil {
+		s.logger.Warn("search cache marshal failed", "error", err)
+		return
+	}
+	if err := s.cache.PutSearch(key, payload, len(out.Listings)); err != nil {
+		s.logger.Warn("search cache write failed", "error", err)
+	}
+}
+
+func (s *Service) storeDetail(key string, out GetListingOutput) {
+	payload, err := json.Marshal(out)
+	if err != nil {
+		s.logger.Warn("detail cache marshal failed", "error", err)
+		return
+	}
+	if err := s.cache.PutDetail(key, payload); err != nil {
+		s.logger.Warn("detail cache write failed", "error", err)
+	}
+}
+
+func decodeDetailOutput(payload []byte) (GetListingOutput, bool) {
+	var out GetListingOutput
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return GetListingOutput{}, false
+	}
+	return out, true
+}
+
+// truncateSearchOutput applies the caller's limit to the response copy and
+// recomputes every field derived from the returned rows. total_matching is
+// never derived from the returned listing array.
+func truncateSearchOutput(out SearchListingsOutput, limit int) SearchListingsOutput {
+	out.Listings = truncateListings(out.Listings, limit)
+	out.Returned = len(out.Listings)
+	out.Sampled = out.TotalMatching > out.Returned
+	out.Stats = summaryStats(out.Listings)
+	return out
+}
+
+// summaryStats mirrors scraper.ComputeStats over the model-facing projection so
+// the statistics always describe exactly the returned listings.
+func summaryStats(listings []ListingSummary) scraper.SearchStats {
+	rows := make([]scraper.Listing, 0, len(listings))
+	for _, l := range listings {
+		rows = append(rows, scraper.Listing{PriceEUR: l.PriceEUR, SizeSqM: l.SizeSqM, Agency: l.Agency})
+	}
+	return scraper.ComputeStats(rows)
+}
+
+// servingMode keeps Radar, live-fallback and unavailable answers in separate
+// cache entries. A scope change (or recovery) therefore cannot serve an answer
+// produced under different semantics.
+func servingMode(scope RadarScope, scopeErr error, neighborhood string) string {
+	switch {
+	case scope.InScope && scopeErr == nil:
+		slug := strings.TrimSpace(scope.Slug)
+		if slug == "" {
+			slug = strings.ToLower(strings.TrimSpace(neighborhood))
+		}
+		return "radar:" + slug
+	case scopeErr != nil:
+		return "unavailable:" + strings.ToLower(strings.TrimSpace(neighborhood))
+	default:
+		return "legacy"
+	}
+}
+
+// filterListingsByRange applies the price and size bounds the imot.bg request
+// URL cannot carry, matching the CLI's own filter semantics.
+func filterListingsByRange(listings []scraper.Listing, params scraper.SearchParams) []scraper.Listing {
+	if params.MinPrice == 0 && params.MaxPrice == 0 && params.MinSqM == 0 && params.MaxSqM == 0 {
+		return listings
+	}
+	out := make([]scraper.Listing, 0, len(listings))
+	for _, l := range listings {
+		if params.MinPrice > 0 && l.PriceEUR < params.MinPrice {
+			continue
+		}
+		if params.MaxPrice > 0 && l.PriceEUR > params.MaxPrice {
+			continue
+		}
+		if params.MinSqM > 0 && l.SizeSqM < params.MinSqM {
+			continue
+		}
+		if params.MaxSqM > 0 && l.SizeSqM > params.MaxSqM {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+// liveClientFilterNames names the bounds that were applied to downloaded rows
+// rather than at the source, so the envelope does not imply server-side
+// filtering the source never performed.
+func liveClientFilterNames(params scraper.SearchParams) []string {
+	var names []string
+	if params.MinPrice > 0 {
+		names = append(names, "min_price")
+	}
+	if params.MaxPrice > 0 {
+		names = append(names, "max_price")
+	}
+	if params.MinSqM > 0 {
+		names = append(names, "min_sqm")
+	}
+	if params.MaxSqM > 0 {
+		names = append(names, "max_sqm")
+	}
+	return names
+}
+
+// scopeReasonNote explains, in bounded prose, why a request was served outside
+// Radar coverage.
+func scopeReasonNote(reason string) string {
+	switch reason {
+	case ScopeReasonRadarNotConfigured:
+		return "Market Radar is not configured on this server, so this answer is the live imot.bg fallback, not Radar coverage."
+	case ScopeReasonRentalNotSupported:
+		return "Market Radar does not cover rentals yet, so this answer is the live imot.bg fallback, not Radar coverage. Rental prices are monthly rent as advertised."
+	case ScopeReasonCityNotCovered:
+		return "Market Radar currently covers София only, so this answer is the live imot.bg fallback, not Radar coverage."
+	case ScopeReasonCitywideNotCovered:
+		return "Market Radar coverage is per neighbourhood, so a query without a neighbourhood is served by the live imot.bg fallback, not Radar coverage."
+	case ScopeReasonNotInCatalogue:
+		return "This neighbourhood is not in the Market Radar coverage catalogue, so this answer is the live imot.bg fallback, not Radar coverage."
+	case ScopeReasonNeighborhoodInactive:
+		return "This neighbourhood is not actively collected by Market Radar, so this answer is the live imot.bg fallback, not Radar coverage."
+	default:
+		return ""
+	}
+}
+
+// observationStale reports whether a stored RFC3339 observation is older than
+// the configured Radar freshness window.
+func (s *Service) observationStale(observedAt string) bool {
+	if s.cfg.RadarFreshness <= 0 || strings.TrimSpace(observedAt) == "" {
+		return false
+	}
+	observed, err := time.Parse(time.RFC3339, observedAt)
+	if err != nil {
+		return false
+	}
+	return s.now().Sub(observed) > s.cfg.RadarFreshness
 }
 
 // ListSupportedFilters returns the vocabulary the search tool accepts.
@@ -369,31 +801,57 @@ func (s *Service) authorizeLive(tool string) error {
 	return nil
 }
 
-func (s *Service) record(tool string, cacheHit bool, took time.Duration, results int) {
-	if err := s.cache.RecordUsage(s.identity, tool, cacheHit); err != nil {
+// record logs one tool call. servedWithoutLiveFetch is true for cache hits and
+// Radar reads: neither touches imot.bg, so neither may consume the shared live
+// budget that guards the scraping egress.
+func (s *Service) record(tool string, servedWithoutLiveFetch bool, took time.Duration, results int) {
+	if err := s.cache.RecordUsage(s.identity, tool, servedWithoutLiveFetch); err != nil {
 		s.logger.Warn("usage record failed", "error", err)
 	}
 	s.logger.Info("tool call",
 		"tool", tool,
 		"identity", s.identity,
-		"cache_hit", cacheHit,
+		"served_without_live_fetch", servedWithoutLiveFetch,
 		"duration_ms", took.Milliseconds(),
 		"results", results,
 	)
 }
 
-// searchKey builds a stable cache key for a normalized query.
-func searchKey(p scraper.SearchParams) string {
-	canonical := fmt.Sprintf("%s|%s|%s|%t|%d|%d|%d|%d|%d",
+// Cache projection versions. A payload is only ever served to a request built
+// with the same projection, so changing the model-facing shape cannot smuggle
+// an old envelope into a new one.
+const (
+	searchProjectionVersion = "imot-mcp-search-v3"
+	detailProjectionVersion = "imot-mcp-detail-v3"
+)
+
+// searchKey builds a stable cache key for a normalized query. The serving mode
+// keeps a Radar answer and a live fallback answer apart; the projection, pages
+// and limit are part of the key so a payload produced for one request can never
+// be replayed as another.
+func searchKey(mode string, p scraper.SearchParams, limit int) string {
+	canonical := fmt.Sprintf("%s|%s|%s|%s|%s|%t|%d|%d|%d|%d|%d|%d",
+		searchProjectionVersion,
+		mode,
 		p.City,
 		strings.ToLower(strings.TrimSpace(p.Neighborhood)),
 		p.Type,
 		p.Rent,
 		p.MinPrice, p.MaxPrice, p.MinSqM, p.MaxSqM,
-		p.Pages,
+		p.Pages, limit,
 	)
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:])
+}
+
+// radarDetailKey and liveDetailKey keep the two detail sources in separate
+// cache entries under the current projection.
+func radarDetailKey(id string) string {
+	return detailProjectionVersion + "|radar|" + id
+}
+
+func liveDetailKey(id string) string {
+	return detailProjectionVersion + "|live|" + id
 }
 
 // toSummaries projects scraped listings onto the model-facing shape.
@@ -426,27 +884,59 @@ func toSummaries(listings []scraper.Listing) []ListingSummary {
 	return out
 }
 
-// refreshNotes explains the freshness and coverage caveats attached to a result.
+// refreshNotes explains the freshness and coverage caveats attached to a
+// result. It is the single place that keeps a non-complete scope from reading
+// as a verified empty market.
 func refreshNotes(out SearchListingsOutput, fromCache bool) []string {
 	var notes []string
 	if out.Sampled {
-		notes = append(notes, fmt.Sprintf(
-			"Sampled result: showing %d of %d matching listings at imot.bg. Raise pages or narrow the filters for fuller coverage.",
-			out.Returned, out.TotalMatching))
+		if len(out.ClientFilters) > 0 {
+			notes = append(notes, fmt.Sprintf(
+				"Sampled result: showing %d of the %d listings the source reported for the unfiltered query; the price/size filters narrowed the downloaded rows.",
+				out.Returned, out.TotalMatching))
+		} else {
+			notes = append(notes, fmt.Sprintf(
+				"Sampled result: showing %d of %d matching listings. Raise the limit or narrow the filters for fuller coverage.",
+				out.Returned, out.TotalMatching))
+		}
 	}
 	if out.Partial {
 		notes = append(notes, "Some result pages failed to load, so counts and statistics may be incomplete.")
 	}
+	if len(out.ClientFilters) > 0 {
+		notes = append(notes, "imot.bg has no URL filter for price or size, so those filters were applied only to the listings downloaded for this query; total_matching still counts the source's unfiltered result.")
+	}
+	switch out.Coverage {
+	case CoverageStale:
+		notes = append(notes, "Market Radar coverage for this scope is stale: the listings are last observations, not a verified current market.")
+	case CoveragePartial:
+		notes = append(notes, "Market Radar reports partial coverage for this scope, so listings may be missing. This is not a verified empty or complete market.")
+	case CoverageNeverCollected:
+		notes = append(notes, "Market Radar has not completed a collection for this scope, so an empty or short result must not be read as an empty market.")
+	case CoverageUnavailable:
+		notes = append(notes, "Market Radar was unavailable, so this is the labelled live imot.bg fallback and not Radar coverage.")
+	}
 	if fromCache && out.AgeSeconds > 600 {
 		notes = append(notes, fmt.Sprintf(
-			"Cached answer scraped %s ago. Set refresh true for a fresh fetch.",
+			"Cached answer produced %s ago. Set refresh true for a fresh fetch.",
 			humanDuration(time.Duration(out.AgeSeconds)*time.Second)))
 	}
 	if out.Query.Rent {
 		notes = append(notes, "Rental prices are monthly rent as advertised; utilities and fees are not included.")
 	}
 	if len(out.Listings) == 0 {
-		notes = append(notes, "No listings matched. Try a wider neighborhood match or remove price and size filters.")
+		switch {
+		case out.Coverage == CoverageComplete:
+			notes = append(notes, "Market Radar coverage for this scope is complete and no active listings match these filters; this is a verified empty result.")
+		case out.Coverage == CoverageNeverCollected || out.Coverage == CoveragePartial || out.Coverage == CoverageStale:
+			notes = append(notes, "No listings were returned, but this scope's Market Radar coverage is not complete; do not read this as a verified empty market.")
+		case len(out.ClientFilters) > 0:
+			notes = append(notes, "No downloaded listings matched your price or size filters; the source query may still have matches outside them.")
+		case out.EmptyVerified:
+			notes = append(notes, "imot.bg explicitly reported no matching listings for this source query.")
+		default:
+			notes = append(notes, "No listings matched. Try a wider neighborhood match or remove price and size filters.")
+		}
 	}
 	return notes
 }
