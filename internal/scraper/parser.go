@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 var (
@@ -98,11 +99,16 @@ const maxUnknownTypeSamples = 5
 // decision needs. A card dropped for missing type/price/size, or carrying a
 // property type this CLI does not recognize, is evidence that coverage is not
 // exhaustive; ParseListings alone would discard that evidence with the card.
+//
+// A block counts as an advert card only when it proves advert identity. Result
+// pages render news teasers inside the same class="zaglavie" marker the cards
+// use; without the identity check every teaser became a phantom card of an
+// invented type. A block with no advert link and no advert number is skipped
+// and counted separately, so it is neither a dropped card nor an unknown type.
 func ScanListings(html string) CardScan {
 	var scan CardScan
 
 	blocks := strings.Split(html, `class="zaglavie"`)
-	scan.CardBlocks = len(blocks) - 1
 	seenTypes := make(map[string]bool)
 	for i := 1; i < len(blocks); i++ {
 		block := blocks[i]
@@ -110,6 +116,12 @@ func ScanListings(html string) CardScan {
 		if idx := strings.Index(block, `class="zaglavie"`); idx > 0 {
 			block = block[:idx]
 		}
+
+		if !hasAdvertIdentity(block) {
+			scan.SkippedNonCardBlocks++
+			continue
+		}
+		scan.CardBlocks++
 
 		listing, typeRecognized := parseListingBlock(block)
 		if !typeRecognized && listing.Type != "" {
@@ -136,6 +148,13 @@ func ScanListings(html string) CardScan {
 	return scan
 }
 
+// hasAdvertIdentity reports whether a "zaglavie"-marked block carries the
+// advert link or advert number an imot.bg advert card always has. The class
+// marker alone is shared with non-advert modules and proves nothing.
+func hasAdvertIdentity(block string) bool {
+	return reURL.MatchString(block) || reListingID.MatchString(block)
+}
+
 // ParseListings extracts listings from HTML. It keeps its original signature for
 // callers that only want the accepted rows; callers that need the card-level
 // integrity counts use ScanListings.
@@ -147,6 +166,7 @@ func ParseListings(html string) []Listing {
 // envelope, keeping the unknown-type sample list bounded and unique.
 func (r *SearchResult) absorbCardScan(scan CardScan) {
 	r.CardBlocks += scan.CardBlocks
+	r.SkippedNonCardBlocks += scan.SkippedNonCardBlocks
 	r.DroppedCards += scan.DroppedCards
 	r.UnknownTypeCards += scan.UnknownTypeCards
 	for _, sample := range scan.UnknownTypeSamples {
@@ -255,68 +275,191 @@ func extractTypeEvidence(title string) (string, bool) {
 	title = strings.TrimPrefix(title, "Дава под наем ")
 	title = strings.TrimSpace(title)
 
-	// Title may have location glued without space: "МНОГОСТАЕНград София, Лозенец"
-	// Split at first lowercase character to isolate the type keyword
-	cutIdx := len(title)
-	for i, r := range title {
-		if i > 0 && unicode.IsLower(r) {
-			cutIdx = i
+	// The type runs from the start of the title until the location begins.
+	// Titles glue the location to the type ("МНОГОСТАЕНград София") and write
+	// the type in title case as often as in upper case ("Продава Двустаен"),
+	// so the boundary is the location introducer and matching is
+	// case-insensitive. Cutting at the first lowercase letter turned "Продава
+	// Двустаен" into the one-letter type "Д", which made the canonical type
+	// depend on the advertiser's capitalisation.
+	head := typeHead(title)
+	if canonical, ok := matchTypeKeyword(strings.ToUpper(head)); ok {
+		return canonical, true
+	}
+
+	// No keyword matched at all. The raw type text is the sample a coverage
+	// decision acts on; it is never a one-letter fragment.
+	return head, false
+}
+
+// typeKeyword is one spelling of a property type card titles use, mapped to the
+// canonical type string emitted on rows. taxonomyLabelSlugs is the source's
+// advertised vocabulary; every label there must resolve through this table,
+// while the spellings of one type share a canonical so a row's type cannot
+// change with the advertiser's capitalisation, abbreviation or synonym choice.
+type typeKeyword struct {
+	// match is the uppercase form looked up in the title's type part.
+	match string
+	// canonical is the type string emitted on the row.
+	canonical string
+	// weak marks a label that names a whole source partition rather than one
+	// card type (the "БИЗНЕС ИМОТ" grouping). A weak keyword only answers when
+	// no specific keyword matched, so "БИЗНЕС ИМОТ, АПТЕКА" stays АПТЕКА.
+	weak bool
+}
+
+// typeKeywords covers the labels taxonomyLabelSlugs advertises plus the word
+// forms imot.bg prints in card titles. An alias exists only where the source
+// itself uses that form.
+var typeKeywords = []typeKeyword{
+	// Apartment sizes: the search form advertises "2-СТАЕН" while titles also
+	// spell the size out.
+	{match: "1-СТАЕН", canonical: "1-СТАЕН"},
+	{match: "ЕДНОСТАЕН", canonical: "1-СТАЕН"},
+	{match: "2-СТАЕН", canonical: "2-СТАЕН"},
+	{match: "ДВУСТАЕН", canonical: "2-СТАЕН"},
+	{match: "3-СТАЕН", canonical: "3-СТАЕН"},
+	{match: "ТРИСТАЕН", canonical: "3-СТАЕН"},
+	{match: "4-СТАЕН", canonical: "4-СТАЕН"},
+	{match: "ЧЕТИРИСТАЕН", canonical: "4-СТАЕН"},
+	{match: "МНОГОСТАЕН", canonical: "МНОГОСТАЕН"},
+	{match: "МЕЗОНЕТ", canonical: "МЕЗОНЕТ"},
+	// The source labels this type "АТЕЛИЕ, ТАВАН"; rows keep the shorter name
+	// this CLI already emits.
+	{match: "АТЕЛИЕ, ТАВАН", canonical: "АТЕЛИЕ"},
+	{match: "АТЕЛИЕ", canonical: "АТЕЛИЕ"},
+	{match: "ОФИС", canonical: "ОФИС"},
+	{match: "МАГАЗИН", canonical: "МАГАЗИН"},
+	{match: "ЗАВЕДЕНИЕ", canonical: "ЗАВЕДЕНИЕ"},
+	{match: "СКЛАД", canonical: "СКЛАД"},
+	{match: "ХОТЕЛ", canonical: "ХОТЕЛ"},
+	// The source labels this type "ПРОМ. ПОМЕЩЕНИЕ"; titles also carry the
+	// spelled-out words and the short legacy name, all emitting one canonical.
+	{match: "ПРОМ. ПОМЕЩЕНИЕ", canonical: "ПРОМИШЛЕНО"},
+	{match: "ПРОМИШЛЕНО ПОМЕЩЕНИЕ", canonical: "ПРОМИШЛЕНО"},
+	{match: "ПРОМИШЛЕНО", canonical: "ПРОМИШЛЕНО"},
+	// "БИЗНЕС ИМОТ" is the source's grouping label; its cards normally name a
+	// subtype, so the grouping only answers when no subtype matched.
+	{match: "БИЗНЕС ИМОТ", canonical: "БИЗНЕС ИМОТ", weak: true},
+	// The source labels this type "ЕТАЖ ОТ КЪЩА"; rows keep the canonical
+	// "ЕТАЖ" the long form already resolved to.
+	{match: "ЕТАЖ ОТ КЪЩА", canonical: "ЕТАЖ"},
+	{match: "ЕТАЖ", canonical: "ЕТАЖ"},
+	{match: "КЪЩА", canonical: "КЪЩА"},
+	{match: "ВИЛА", canonical: "ВИЛА"},
+	{match: "ПАРЦЕЛ", canonical: "ПАРЦЕЛ"},
+	// The source labels this pair "ГАРАЖ, ПАРКОМЯСТО"; rows keep the canonical
+	// the longer word already produced.
+	{match: "ГАРАЖ, ПАРКОМЯСТО", canonical: "ПАРКОМЯСТО"},
+	{match: "ГАРАЖ", canonical: "ГАРАЖ"},
+	{match: "ПАРКОМЯСТО", canonical: "ПАРКОМЯСТО"},
+	// The source labels land "ЗЕМЕДЕЛСКА ЗЕМЯ"; rows keep the canonical "ЗЕМЯ".
+	{match: "ЗЕМЕДЕЛСКА ЗЕМЯ", canonical: "ЗЕМЯ"},
+	{match: "ЗЕМЯ", canonical: "ЗЕМЯ"},
+	// Business property subtypes (appear under the "БИЗНЕС ИМОТ" filter).
+	{match: "АВТОМИВКА", canonical: "АВТОМИВКА"},
+	{match: "АВТОСЕРВИЗ", canonical: "АВТОСЕРВИЗ"},
+	{match: "АПТЕКА", canonical: "АПТЕКА"},
+	{match: "БАНКОВ ОФИС", canonical: "БАНКОВ ОФИС"},
+	{match: "БЕНЗИНОСТАНЦИЯ", canonical: "БЕНЗИНОСТАНЦИЯ"},
+	{match: "КЛИНИКА", canonical: "КЛИНИКА"},
+	{match: "ЛЕКАРСКИ КАБИНЕТ", canonical: "ЛЕКАРСКИ КАБИНЕТ"},
+	{match: "ФЕРМА", canonical: "ФЕРМА"},
+	{match: "СПА", canonical: "СПА"},
+	{match: "СОЛЯРНО СТУДИО", canonical: "СОЛЯРНО СТУДИО"},
+	{match: "СТОМАТОЛОГИЧЕН КАБИНЕТ", canonical: "СТОМАТОЛОГИЧЕН КАБИНЕТ"},
+	{match: "ТЪРГОВСКИ КОМПЛЕКС", canonical: "ТЪРГОВСКИ КОМПЛЕКС"},
+	{match: "ФАБРИКА", canonical: "ФАБРИКА"},
+	{match: "ЗАВОД", canonical: "ЗАВОД"},
+	{match: "ФИТНЕС ЗАЛА", canonical: "ФИТНЕС ЗАЛА"},
+	{match: "ФРИЗЬОРСКИ", canonical: "ФРИЗЬОРСКИ"},
+	{match: "КОЗМЕТИЧЕН САЛОН", canonical: "КОЗМЕТИЧЕН САЛОН"},
+	{match: "ПАРКИНГ", canonical: "ПАРКИНГ"},
+	{match: "ФОТОГРАФСКО СТУДИО", canonical: "ФОТОГРАФСКО СТУДИО"},
+	{match: "ДЕТСКИ ЦЕНТЪР", canonical: "ДЕТСКИ ЦЕНТЪР"},
+	{match: "АКВАПАРК", canonical: "АКВАПАРК"},
+	{match: "ВИЛНО СЕЛИЩЕ", canonical: "ВИЛНО СЕЛИЩЕ"},
+	{match: "СОЛЯРЕН ПАРК", canonical: "СОЛЯРЕН ПАРК"},
+	{match: "ДОМ ЗА ВЪЗРАСТНИ ХОРА", canonical: "ДОМ ЗА ВЪЗРАСТНИ ХОРА"},
+	{match: "САМОСТОЯТЕЛНА СГРАДА", canonical: "САМОСТОЯТЕЛНА СГРАДА"},
+	{match: "ХЛАДИЛЕН СКЛАД", canonical: "ХЛАДИЛЕН СКЛАД"},
+}
+
+// locationIntroducers begin the part of a card title that names the location
+// rather than the property type. Titles glue them to the type ("2-СТАЕНград
+// София"), so they are searched without assuming a preceding space.
+var locationIntroducers = []string{"град", "гр.", "с.", "кв.", "ж.к.", "област", "обл.", " в ", " на "}
+
+// typeHead returns the leading part of a card title that can hold the property
+// type: everything before the location introducer, or the whole title when the
+// title names no location.
+//
+// A marker is only an introducer when it ENDS a word. "град" inside "СГРАДА"
+// would otherwise cut "САМОСТОЯТЕЛНА СГРАДА" down to "САМОСТОЯТЕЛНА С", which no
+// keyword can match: the card is then reported as an unrecognized property type,
+// every sweep carrying such an advertisement is withheld from absence detection,
+// and a real business-property type reads as a parser gap. The glued form the
+// markers exist for ("2-СТАЕНград София") still matches, because there the
+// marker is followed by a space.
+func typeHead(title string) string {
+	cut := len(title)
+	for i := range title {
+		for _, marker := range locationIntroducers {
+			end := i + len(marker)
+			if end > len(title) || !strings.EqualFold(title[i:end], marker) {
+				continue
+			}
+			if after, _ := utf8.DecodeRuneInString(title[end:]); unicode.IsLetter(after) {
+				continue
+			}
+			if i < cut {
+				cut = i
+			}
 			break
 		}
 	}
-	typePart := strings.TrimSpace(title[:cutIdx])
+	return strings.TrimSpace(title[:cut])
+}
 
-	// Property-type keywords. Overlapping keys are common ("БАНКОВ ОФИС"
-	// contains "ОФИС", "ЕТАЖ ОТ КЪЩА" contains both "ЕТАЖ" and "КЪЩА"), so the
-	// ranking below decides the answer instead of the order of this list.
-	types := []string{
-		"1-СТАЕН", "2-СТАЕН", "3-СТАЕН", "4-СТАЕН",
-		"МНОГОСТАЕН", "МЕЗОНЕТ", "КЪЩА", "ВИЛА",
-		"ОФИС", "МАГАЗИН", "ЗАВЕДЕНИЕ", "СКЛАД",
-		"ГАРАЖ", "ПАРКОМЯСТО", "ЗЕМЯ", "ПАРЦЕЛ", "АТЕЛИЕ",
-		"ЕТАЖ", "ПРОМИШЛЕНО",
-		// Business property subtypes (appear under "БИЗНЕС ИМОТ" filter)
-		"АВТОМИВКА", "АВТОСЕРВИЗ", "АПТЕКА", "БАНКОВ ОФИС",
-		"БЕНЗИНОСТАНЦИЯ", "КЛИНИКА", "ЛЕКАРСКИ КАБИНЕТ", "ФЕРМА",
-		"СПА", "СОЛЯРНО СТУДИО", "СТОМАТОЛОГИЧЕН КАБИНЕТ",
-		"ТЪРГОВСКИ КОМПЛЕКС", "ФАБРИКА", "ЗАВОД",
-		"ФИТНЕС ЗАЛА", "ФРИЗЬОРСКИ", "КОЗМЕТИЧЕН САЛОН",
-		"ПАРКИНГ", "ФОТОГРАФСКО СТУДИО", "ДЕТСКИ ЦЕНТЪР",
-		"АКВАПАРК", "ВИЛНО СЕЛИЩЕ", "СОЛЯРЕН ПАРК",
-		"ДОМ ЗА ВЪЗРАСТНИ ХОРА", "САМОСТОЯТЕЛНА СГРАДА",
-		"ХЛАДИЛЕН СКЛАД",
-	}
-	// 1. An exact match wins outright.
-	for _, t := range types {
-		if strings.EqualFold(typePart, t) {
-			return t, true
+// matchTypeKeyword resolves an uppercased type part to a canonical type. An
+// exact spelling wins outright; otherwise the longest keyword wins, with the
+// earliest position as tie-break. Weak keywords (source partition names) are
+// only consulted when no specific keyword matched.
+func matchTypeKeyword(part string) (string, bool) {
+	for _, kw := range typeKeywords {
+		if part == kw.match {
+			return kw.canonical, true
 		}
 	}
+	if canonical, ok := longestTypeMatch(part, false); ok {
+		return canonical, true
+	}
+	return longestTypeMatch(part, true)
+}
 
-	// 2. Otherwise the longest matching key, because the longer key is the more
-	// specific type ("БАНКОВ ОФИС" over "ОФИС"). Equal-length ties go to the key
-	// that starts earliest in the title, so "ЕТАЖ ОТ КЪЩА" is ЕТАЖ (offset 0)
-	// rather than КЪЩА (offset 8); list order is the final tie-break.
-	best := ""
+// longestTypeMatch returns the canonical type of the longest keyword found in
+// part, optionally including weak partition names.
+func longestTypeMatch(part string, includeWeak bool) (string, bool) {
+	bestCanonical, bestMatch := "", ""
 	bestPos := -1
-	for _, t := range types {
-		pos := strings.Index(typePart, t)
+	for _, kw := range typeKeywords {
+		if kw.weak && !includeWeak {
+			continue
+		}
+		pos := strings.Index(part, kw.match)
 		if pos < 0 {
 			continue
 		}
-		longer := len([]rune(t)) > len([]rune(best))
-		earlier := len([]rune(t)) == len([]rune(best)) && (bestPos < 0 || pos < bestPos)
+		longer := len([]rune(kw.match)) > len([]rune(bestMatch))
+		earlier := len([]rune(kw.match)) == len([]rune(bestMatch)) && (bestPos < 0 || pos < bestPos)
 		if longer || earlier {
-			best = t
-			bestPos = pos
+			bestCanonical, bestMatch, bestPos = kw.canonical, kw.match, pos
 		}
 	}
-	if best != "" {
-		return best, true
+	if bestMatch == "" {
+		return "", false
 	}
-
-	// 3. No keyword matched at all.
-	return typePart, false
+	return bestCanonical, true
 }
 
 func extractInfo(block string) string {

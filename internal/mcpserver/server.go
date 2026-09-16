@@ -185,6 +185,27 @@ func (s *Server) buildServer(identity string) *mcp.Server {
 		return nil, out, err
 	})
 
+	// The published geographic read API (radar-geo-1). The tools register even
+	// when the API is unconfigured, in which case they answer with an
+	// unavailable-capability error and never with a live-source approximation.
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        ToolRadarGeoSearch,
+		Description: toolRadarGeoSearchDescription,
+		Annotations: readOnlyAnnotations(),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in RadarGeoSearchInput) (*mcp.CallToolResult, RadarGeoSearchOutput, error) {
+		out, err := s.radarGeoSearch(ctx, in)
+		return nil, out, err
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        ToolRadarLocation,
+		Description: toolRadarLocationDescription,
+		Annotations: readOnlyAnnotations(),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in RadarLocationInput) (*mcp.CallToolResult, RadarLocationOutput, error) {
+		out, err := s.radarLocation(ctx, in)
+		return nil, out, err
+	})
+
 	return srv
 }
 

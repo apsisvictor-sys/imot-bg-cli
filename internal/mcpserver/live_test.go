@@ -164,8 +164,8 @@ func TestLiveRemote(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	t.Logf("deployment exposes: %v", names)
-	if len(names) != 3 {
-		t.Fatalf("expected 3 tools, got %d", len(names))
+	if len(names) != 5 {
+		t.Fatalf("expected 5 tools, got %d", len(names))
 	}
 
 	searchOut := callTool[SearchListingsOutput](t, ctx, session, ToolSearchListings, map[string]any{

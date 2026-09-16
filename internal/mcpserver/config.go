@@ -7,6 +7,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/apsisvictor/imot-cli/internal/radarclient"
+)
+
+// Environment names of the published geographic read API behind the two
+// Radar geo tools. They are read together: with either one unset the tools
+// stay registered and answer with an unavailable-capability error, never with
+// a live-source approximation.
+const (
+	EnvRadarGeoBaseURL = "IMOT_MCP_RADAR_GEO_BASE_URL"
+	EnvRadarGeoToken   = "IMOT_MCP_RADAR_GEO_TOKEN"
 )
 
 // Config controls caching, politeness, and quota behaviour for the MCP server.
@@ -52,6 +63,14 @@ type Config struct {
 	// It is empty by default, which keeps every tool unconditionally read-only.
 	RadarEnqueueDSN string
 
+	// RadarGeoBaseURL is the origin of the published Market Radar geographic
+	// read API (contract radar-geo-1) and RadarGeoToken is its read bearer
+	// token. Both are empty by default, which leaves radar_geo_search and
+	// radar_location registered but unavailable. They are never used as a
+	// fallback to scraping imot.bg, and the token is never logged.
+	RadarGeoBaseURL string
+	RadarGeoToken   string
+
 	LiveQuotaPerWindow   int           // live operations allowed per identity per window
 	GlobalQuotaPerWindow int           // live operations allowed across all identities per window
 	QuotaWindow          time.Duration // quota window length
@@ -95,6 +114,8 @@ func LoadConfig() (Config, error) {
 		RadarQueryTimeout:    envDuration("IMOT_MCP_RADAR_TIMEOUT", 5*time.Second),
 		RadarFreshness:       envDuration("IMOT_MCP_RADAR_FRESHNESS", 26*time.Hour),
 		RadarEnqueueDSN:      envStr("IMOT_MCP_RADAR_ENQUEUE_DSN", ""),
+		RadarGeoBaseURL:      envStr(EnvRadarGeoBaseURL, ""),
+		RadarGeoToken:        envStr(EnvRadarGeoToken, ""),
 	}
 
 	tokens, err := parseTokens(os.Getenv("IMOT_MCP_TOKENS"))
@@ -148,6 +169,17 @@ func (c Config) validate() error {
 	}
 	if c.RadarFreshness <= 0 {
 		return fmt.Errorf("IMOT_MCP_RADAR_FRESHNESS must be positive")
+	}
+	// The geographic API is optional, but it is not half-configurable: an
+	// origin without a token (or a token without an origin) is a mistake that
+	// would otherwise surface as a confusing tool-time failure.
+	if (c.RadarGeoBaseURL == "") != (c.RadarGeoToken == "") {
+		return fmt.Errorf("%s and %s must be set together", EnvRadarGeoBaseURL, EnvRadarGeoToken)
+	}
+	if c.RadarGeoBaseURL != "" {
+		if err := radarclient.ValidateBaseURL(c.RadarGeoBaseURL); err != nil {
+			return fmt.Errorf("%s: %w", EnvRadarGeoBaseURL, err)
+		}
 	}
 	return nil
 }

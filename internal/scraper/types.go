@@ -343,9 +343,15 @@ type SearchResult struct {
 	// "unresolved" when no slug could be built. Only a confirmed resolution can
 	// support a completeness claim.
 	NeighborhoodResolution string `json:"neighborhood_resolution,omitempty"`
-	// CardBlocks is the number of listing-card blocks seen across the fetched
-	// pages.
+	// CardBlocks is the number of advert-card blocks seen across the fetched
+	// pages. A "zaglavie"-marked block that carries no advert identity is not a
+	// card and is counted in SkippedNonCardBlocks instead.
 	CardBlocks int `json:"card_blocks"`
+	// SkippedNonCardBlocks counts blocks that carry the page's card marker but
+	// no advert link or advert number (news teasers and other non-advert
+	// modules). They are not cards: they are not counted in CardBlocks, dropped
+	// or unknown, and they add no unknown-type sample.
+	SkippedNonCardBlocks int `json:"skipped_non_card_blocks"`
 	// DroppedCards is the number of CardBlocks that were NOT emitted as listings.
 	// A positive value is a parsed-count mismatch and makes coverage unproven; it
 	// is never evidence that those cards do not exist.
@@ -387,11 +393,12 @@ const (
 // completeness decision needs, because a card dropped for missing type/price/size
 // or carrying an unrecognized property type otherwise disappears without a trace.
 type CardScan struct {
-	Listings           []Listing
-	CardBlocks         int
-	DroppedCards       int
-	UnknownTypeCards   int
-	UnknownTypeSamples []string
+	Listings             []Listing
+	CardBlocks           int
+	SkippedNonCardBlocks int
+	DroppedCards         int
+	UnknownTypeCards     int
+	UnknownTypeSamples   []string
 }
 
 // CityMap maps Bulgarian city names to URL slugs

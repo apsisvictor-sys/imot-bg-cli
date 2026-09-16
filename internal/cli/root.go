@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/apsisvictor/imot-cli/internal/radarclient"
 	"github.com/apsisvictor/imot-cli/internal/scraper"
 	"github.com/apsisvictor/imot-cli/internal/store"
 	"github.com/apsisvictor/imot-cli/internal/translit"
@@ -77,6 +79,8 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newCitiesCmd())
 	rootCmd.AddCommand(newDetailCmd())
 	rootCmd.AddCommand(newTaxonomyCmd())
+	rootCmd.AddCommand(newMapPinsCmd())
+	rootCmd.AddCommand(newRadarCmd())
 
 	return rootCmd
 }
@@ -937,6 +941,108 @@ func outputListings(listings []scraper.Listing) error {
 	return nil
 }
 
+// newMapPinsCmd registers the scope-level map-pin producer: one map scope
+// (category x city x neighbourhood x property type) in, validated native source
+// pins plus honest coverage metadata out. The source's own map form is fetched
+// and submitted per run; no field value is fabricated or replayed.
+func newMapPinsCmd() *cobra.Command {
+	var (
+		city         string
+		neighborhood string
+		propType     string
+		rent         bool
+		jsonOut      bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "map-pins",
+		Short: "Fetch one imot.bg map scope's native source pins",
+		Long: "Fetches the source's map page for one scope and submits the page's own mapgfixparams form to " +
+			"read the map body's positional pin arrays (latitudes, longitudes, advert ids). The arrays must be " +
+			"equal-length and every advert id must be canonical; a single bad record is dropped with a bounded " +
+			"warning code while the rest survive, and unequal arrays fail the payload rather than shifting one " +
+			"advert's coordinate onto another.\n\n" +
+			"--json prints the imot-map-pins-v1 envelope; without it a one-line summary reports parsed pins, " +
+			"distinct points, completeness and warnings. Completeness is 'complete' only when the source's own " +
+			"mapped-advert heading count equals the validated pins; a missing or mismatching heading stays " +
+			"'unknown' rather than being read as a complete batch. A challenge, block or unreadable map page " +
+			"exits non-zero after printing typed error metadata as JSON.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(city) == "" {
+				return fmt.Errorf("--city is required; a map scope names one city")
+			}
+
+			params := scraper.SearchParams{
+				City:         resolveCity(city),
+				Neighborhood: neighborhood,
+				Type:         propType,
+				Rent:         rent,
+			}
+
+			result, err := scraper.NewClient().FetchMapPins(params)
+			if err != nil {
+				return emitMapPinsError(err)
+			}
+			if jsonOut {
+				return encodeMapPins(result)
+			}
+			return printMapPinsSummary(result)
+		},
+	}
+
+	cmd.Flags().StringVar(&city, "city", "", "City name (Bulgarian), e.g. София")
+	cmd.Flags().StringVar(&neighborhood, "neighborhood", "", "Neighbourhood name (Bulgarian or transliterated)")
+	cmd.Flags().StringVar(&propType, "type", "", "Property type label or source slug (e.g. тристаен, tristaen)")
+	cmd.Flags().BoolVar(&rent, "rent", false, "Fetch the rentals map instead of the sales map")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print the imot-map-pins-v1 envelope instead of a one-line summary")
+	return cmd
+}
+
+// encodeMapPins writes the unchanged map-pin payload on the JSON stream.
+func encodeMapPins(result scraper.MapPinsResult) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	return enc.Encode(result)
+}
+
+// printMapPinsSummary prints the coverage facts a person reads: how many pins
+// were parsed, how many distinct points they cover, whether the source proved
+// the batch complete, the source's own count when it reported one, and every
+// warning code that says what was refused.
+func printMapPinsSummary(result scraper.MapPinsResult) error {
+	reported := "none"
+	if result.ReportedMappedCount != nil {
+		reported = strconv.Itoa(*result.ReportedMappedCount)
+	}
+	warnings := "none"
+	if len(result.Warnings) > 0 {
+		warnings = strings.Join(result.Warnings, ",")
+	}
+	fmt.Printf("pins: %d | distinct points: %d | completeness: %s | reported mapped count: %s | warnings: %s\n",
+		len(result.Pins), result.DistinctPoints, result.Completeness, reported, warnings)
+	return nil
+}
+
+// emitMapPinsError prints a typed *MapPinsError's metadata as JSON on stdout —
+// the same stream success uses — and returns it so the process exits non-zero.
+// A consumer therefore can never read a challenge or a misaligned page as a
+// scope with zero pins.
+func emitMapPinsError(err error) error {
+	var mapErr *scraper.MapPinsError
+	if errors.As(err, &mapErr) {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		if encErr := enc.Encode(mapErr); encErr != nil {
+			return fmt.Errorf("%w (and printing error metadata failed: %v)", mapErr, encErr)
+		}
+		return mapErr
+	}
+	return err
+}
+
 func formatListingAgent(l scraper.Listing) {
 	// Terse one-line format for LLM consumption. Truncate by rune count: byte
 	// slicing a 2-byte Cyrillic character emits U+FFFD.
@@ -944,4 +1050,605 @@ func formatListingAgent(l scraper.Listing) {
 	fmt.Printf("€%d | %d sqm | %s | %s, %s | floor:%s | year:%s | tel:%s | %s\n",
 		l.PriceEUR, l.SizeSqM, l.Type, l.City, l.Neighborhood,
 		l.Floor, l.YearBuilt, l.Phone, desc)
+}
+
+// ── imot radar: read the published Radar geographic API ─────────────────────
+//
+// This group speaks the versioned HTTP contract (radar-geo-1) implemented in
+// broker-essentials/apps/market-radar. It reads already-published Radar data
+// and never scrapes imot.bg: a Radar outage, a refusal or a missing listing is
+// an error with a typed code, never an empty result and never a live-source
+// fallback. Every flag is local to this group, so nothing here can change the
+// meaning of `imot search`.
+//
+// Configuration is read from the environment: IMOT_RADAR_API_BASE_URL names
+// the API origin and IMOT_RADAR_API_READ_TOKEN carries the read bearer token.
+// The token is never printed, echoed or placed in a URL.
+
+const (
+	// radarCommandTimeout bounds a whole radar command. Each call carries its
+	// own 5s client timeout; this is the ceiling for --all pagination.
+	radarCommandTimeout = 5 * time.Minute
+	// radarMaxPages bounds --all. It is a safety cap, not a query limit: when
+	// it is reached while more pages remain, the output says so and the
+	// command exits non-zero.
+	radarMaxPages = 50
+	// radarHumanRowsPerGroup bounds the human table. The JSON envelope always
+	// carries every row of the page.
+	radarHumanRowsPerGroup = 10
+)
+
+// newRadarCmd registers the published-data command group.
+func newRadarCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "radar",
+		Short: "Query the published Market Radar geographic API",
+		Long: "Queries the published Market Radar read API (contract radar-geo-1) over HTTPS. " +
+			"These commands read already-collected Radar data; they never scrape imot.bg, so a " +
+			"Radar outage returns a typed error instead of an empty result.\n\n" +
+			"Configuration comes from the environment: IMOT_RADAR_API_BASE_URL names the API " +
+			"origin and IMOT_RADAR_API_READ_TOKEN carries the read bearer token. The token is " +
+			"never printed, echoed or placed in a URL.",
+	}
+	cmd.AddCommand(newRadarSearchCmd())
+	cmd.AddCommand(newRadarLocationCmd())
+	return cmd
+}
+
+// radarSearchFlags are local to the radar search command: no package-level
+// flag variable is shared with imot search, so the two meanings cannot drift.
+type radarSearchFlags struct {
+	neighborhoods      []string
+	neighborhoodSlugs  []string
+	types              []string
+	minSqm             float64
+	maxSqm             float64
+	minPrice           float64
+	maxPrice           float64
+	floorMax           int
+	lat                float64
+	lng                float64
+	radiusMeters       int
+	missingFieldPolicy string
+	groups             string
+	all                bool
+	jsonOut            bool
+
+	// anchorSet reports whether each anchor flag was given at all, so a real
+	// zero coordinate is distinguishable from an unset flag.
+	latSet    bool
+	lngSet    bool
+	radiusSet bool
+}
+
+func newRadarSearchCmd() *cobra.Command {
+	flags := &radarSearchFlags{}
+
+	cmd := &cobra.Command{
+		Use:   "search",
+		Short: "Search published Radar listings by property and geographic filters",
+		Long: "Builds one geographic search and prints its result groups.\n\n" +
+			"Every filter is a predicate on the matching population; the groups report how the " +
+			"geographic evidence classifies a match: supported (a location the evidence backs), " +
+			"possible (the location is not proven, not disproven) and excluded (an explicit " +
+			"mismatch). supported and possible are requested by default.\n\n" +
+			"An anchor is optional, but an anchor, a longitude and a radius travel together: " +
+			"--lat, --lng and --radius must all be given, and --radius alone is refused rather " +
+			"than applied to an implicit centre.\n\n" +
+			"--json prints the raw radar-geo-1 envelope. With --all it prints one wrapper holding " +
+			"the raw envelope of every page plus explicit truncation fields, because a safety cap " +
+			"or an interruption must never look like a complete result. Human output prints the " +
+			"group totals, coverage and the page's top rows.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags.latSet = cmd.Flags().Changed("lat")
+			flags.lngSet = cmd.Flags().Changed("lng")
+			flags.radiusSet = cmd.Flags().Changed("radius")
+
+			input, err := flags.input()
+			if err != nil {
+				return err
+			}
+			client, err := radarclient.FromEnv()
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), radarCommandTimeout)
+			defer cancel()
+
+			if flags.all {
+				return runRadarSearchAll(ctx, client, input, flags.jsonOut, os.Stdout)
+			}
+			response, err := client.GeoSearch(ctx, input)
+			if err != nil {
+				return err
+			}
+			if flags.jsonOut {
+				return writeRadarSearchJSON(os.Stdout, response)
+			}
+			return printRadarSearchHuman(os.Stdout, response)
+		},
+	}
+
+	f := cmd.Flags()
+	f.StringSliceVar(&flags.neighborhoods, "neighborhood", nil, "Bulgarian neighbourhood label (repeatable); transliterated to the Radar catalogue slug and validated by the API")
+	f.StringSliceVar(&flags.neighborhoodSlugs, "neighborhood-slug", nil, "Radar catalogue neighbourhood slug (repeatable); used verbatim")
+	f.StringSliceVar(&flags.types, "type", nil, "Property type label or canonical value, case-insensitive (repeatable; e.g. 2-стаен, 2-СТАЕН, ателие)")
+	f.Float64Var(&flags.minSqm, "min-sqm", 0, "Minimum size in square metres")
+	f.Float64Var(&flags.maxSqm, "max-sqm", 0, "Maximum size in square metres")
+	f.Float64Var(&flags.minPrice, "min-price", 0, "Minimum asking price in EUR")
+	f.Float64Var(&flags.maxPrice, "max-price", 0, "Maximum asking price in EUR")
+	f.IntVar(&flags.floorMax, "floor-max", -1, "Maximum floor; 0 is the ground floor, -1 leaves the floor unbounded")
+	f.Float64Var(&flags.lat, "lat", 0, "Anchor latitude WGS84 (requires --lng and --radius)")
+	f.Float64Var(&flags.lng, "lng", 0, "Anchor longitude WGS84 (requires --lat and --radius)")
+	f.IntVar(&flags.radiusMeters, "radius", 0, "Anchor radius in metres, 1..50000 (requires --lat and --lng)")
+	f.StringVar(&flags.missingFieldPolicy, "missing-field-policy", radarclient.PolicyPossible, "How an unresolved floor is treated: possible or exclude")
+	f.StringVar(&flags.groups, "groups", radarclient.GroupSupported+","+radarclient.GroupPossible, "Result groups to return, comma-separated: supported, possible, excluded")
+	f.BoolVar(&flags.all, "all", false, "Follow every page while any requested group hasMore is true (at most 50 pages) and report truncation")
+	f.BoolVar(&flags.jsonOut, "json", false, "Print the raw radar-geo-1 envelope instead of the human summary")
+	return cmd
+}
+
+// input turns the flags into a validated search request. It is the single
+// normalization boundary for the command, so a bad filter is refused before
+// any network call.
+func (f *radarSearchFlags) input() (radarclient.GeoSearchInput, error) {
+	input := radarclient.GeoSearchInput{PageSize: radarclient.DefaultPageSize}
+
+	types, err := radarclient.CanonicalPropertyTypeList(f.types)
+	if err != nil {
+		return input, fmt.Errorf("--type: %w", err)
+	}
+	input.Population.PropertyTypes = types
+
+	neighborhoods, err := radarNeighborhoods(f.neighborhoods, f.neighborhoodSlugs)
+	if err != nil {
+		return input, err
+	}
+	input.Population.Neighborhoods = neighborhoods
+
+	if f.minSqm < 0 || f.maxSqm < 0 {
+		return input, fmt.Errorf("--min-sqm and --max-sqm must not be negative")
+	}
+	if f.minPrice < 0 || f.maxPrice < 0 {
+		return input, fmt.Errorf("--min-price and --max-price must not be negative")
+	}
+	if f.maxSqm > 0 && f.minSqm > f.maxSqm {
+		return input, fmt.Errorf("--min-sqm %.1f exceeds --max-sqm %.1f", f.minSqm, f.maxSqm)
+	}
+	if f.maxPrice > 0 && f.minPrice > f.maxPrice {
+		return input, fmt.Errorf("--min-price %.0f exceeds --max-price %.0f", f.minPrice, f.maxPrice)
+	}
+	if f.minSqm > 0 {
+		input.Population.AreaMin = &f.minSqm
+	}
+	if f.maxSqm > 0 {
+		input.Population.AreaMax = &f.maxSqm
+	}
+	if f.minPrice > 0 {
+		input.Population.PriceMin = &f.minPrice
+	}
+	if f.maxPrice > 0 {
+		input.Population.PriceMax = &f.maxPrice
+	}
+	if f.floorMax < -1 {
+		return input, fmt.Errorf("--floor-max must be -1 (unbounded), 0 (ground floor) or a positive floor number")
+	}
+	if f.floorMax >= 0 {
+		floor := f.floorMax
+		input.Population.FloorMax = &floor
+	}
+
+	if f.latSet || f.lngSet || f.radiusSet {
+		if !f.latSet || !f.lngSet || !f.radiusSet {
+			return input, fmt.Errorf("--lat, --lng and --radius must be given together; an anchor always carries a radius")
+		}
+		if f.lat < -90 || f.lat > 90 {
+			return input, fmt.Errorf("--lat must be between -90 and 90")
+		}
+		if f.lng < -180 || f.lng > 180 {
+			return input, fmt.Errorf("--lng must be between -180 and 180")
+		}
+		if f.radiusMeters < radarclient.MinRadiusMeters || f.radiusMeters > radarclient.MaxRadiusMeters {
+			return input, fmt.Errorf("--radius must be between %d and %d metres", radarclient.MinRadiusMeters, radarclient.MaxRadiusMeters)
+		}
+		input.Geo.Anchor = &radarclient.GeoPoint{Lat: f.lat, Lng: f.lng}
+		input.Geo.RadiusMeters = &f.radiusMeters
+	}
+
+	policy, err := radarclient.NormalizeMissingFieldPolicy(f.missingFieldPolicy)
+	if err != nil {
+		return input, fmt.Errorf("--missing-field-policy: %w", err)
+	}
+	input.MissingFieldPolicy = policy
+
+	groups, err := radarParseGroups(f.groups)
+	if err != nil {
+		return input, err
+	}
+	input.Groups = groups
+	return input, nil
+}
+
+// radarNeighborhoods normalizes labels to catalogue-slug candidates and keeps
+// explicit slugs verbatim, preserving order and dropping duplicates. The API
+// owns catalogue membership: an unknown slug comes back as a typed
+// invalid_query, never as an empty result.
+func radarNeighborhoods(labels, slugs []string) ([]string, error) {
+	combined := make([]string, 0, len(labels)+len(slugs))
+	for _, label := range labels {
+		if strings.TrimSpace(label) == "" {
+			return nil, fmt.Errorf("--neighborhood must not be empty")
+		}
+		combined = append(combined, translit.ToSlug(label))
+	}
+	for _, slug := range slugs {
+		if strings.TrimSpace(slug) == "" {
+			return nil, fmt.Errorf("--neighborhood-slug must not be empty")
+		}
+		combined = append(combined, slug)
+	}
+	normalized, err := radarclient.NormalizeNeighborhoods(combined)
+	if err != nil {
+		return nil, fmt.Errorf("--neighborhood: %w", err)
+	}
+	return normalized, nil
+}
+
+// radarParseGroups parses the comma-separated group list.
+func radarParseGroups(raw string) ([]string, error) {
+	groups, err := radarclient.NormalizeGroups(strings.Split(raw, ","))
+	if err != nil {
+		return nil, fmt.Errorf("--groups: %w", err)
+	}
+	if len(groups) == 0 {
+		return nil, fmt.Errorf("--groups needs at least one of supported, possible, excluded")
+	}
+	return groups, nil
+}
+
+// radarAllOutput is the --all payload: the raw envelope of every page, in
+// order, plus an explicit statement of whether every page was reached. A cap
+// or an interruption is never silent.
+type radarAllOutput struct {
+	RequestedGroups  []string                        `json:"requested_groups"`
+	PagesFetched     int                             `json:"pages_fetched"`
+	Truncated        bool                            `json:"truncated"`
+	TruncationReason string                          `json:"truncation_reason,omitempty"`
+	Envelopes        []radarclient.GeoSearchResponse `json:"envelopes"`
+}
+
+// runRadarSearchAll follows next pages while any requested group reports
+// hasMore. It writes what it read before returning an error, so an
+// interruption leaves an honest, machine-readable partial answer and a
+// non-zero exit status.
+func runRadarSearchAll(ctx context.Context, client *radarclient.Client, input radarclient.GeoSearchInput, jsonOut bool, w io.Writer) error {
+	output := radarAllOutput{
+		RequestedGroups: input.Groups,
+		Envelopes:       []radarclient.GeoSearchResponse{},
+	}
+	var runErr error
+
+	for page := 1; ; page++ {
+		input.Page = page
+		response, err := client.GeoSearch(ctx, input)
+		if err != nil {
+			output.Truncated = true
+			output.TruncationReason = radarTruncationReason(err)
+			runErr = err
+			break
+		}
+		output.Envelopes = append(output.Envelopes, response)
+		output.PagesFetched = page
+		if !radarHasMore(response.HasMore, input.Groups) {
+			break
+		}
+		if page >= radarMaxPages {
+			output.Truncated = true
+			output.TruncationReason = "page_cap"
+			runErr = fmt.Errorf("--all stopped at the %d-page safety cap while hasMore was still true; re-run the same filters to read further pages", radarMaxPages)
+			break
+		}
+	}
+
+	if jsonOut {
+		if err := writeRadarAllJSON(w, output); err != nil {
+			return err
+		}
+	} else if err := printRadarAllHuman(w, output); err != nil {
+		return err
+	}
+	return runErr
+}
+
+// radarHasMore reports whether any requested group still has a later page. A
+// group that was not requested cannot extend pagination.
+func radarHasMore(hasMore radarclient.GeoGroupHasMore, groups []string) bool {
+	for _, group := range groups {
+		switch group {
+		case radarclient.GroupSupported:
+			if hasMore.Supported {
+				return true
+			}
+		case radarclient.GroupPossible:
+			if hasMore.Possible {
+				return true
+			}
+		case radarclient.GroupExcluded:
+			if hasMore.Excluded {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// radarTruncationReason names why an --all run stopped early: the typed API
+// code when the failure carried one, otherwise a generic marker.
+func radarTruncationReason(err error) string {
+	var apiErr *radarclient.APIError
+	if errors.As(err, &apiErr) && apiErr.Code != "" {
+		return apiErr.Code
+	}
+	return "request_failed"
+}
+
+// writeRadarSearchJSON writes the raw envelope unchanged.
+func writeRadarSearchJSON(w io.Writer, response radarclient.GeoSearchResponse) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(response)
+}
+
+// writeRadarAllJSON writes the --all wrapper holding each page's raw envelope.
+func writeRadarAllJSON(w io.Writer, output radarAllOutput) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(output)
+}
+
+// writeRadarLocationJSON writes one listing's full location evidence.
+func writeRadarLocationJSON(w io.Writer, detail radarclient.GeoLocationDetail) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(detail)
+}
+
+// printRadarSearchHuman prints the group totals, coverage and the page's top
+// rows: price, area, floor, method/precision, warning count and URL.
+func printRadarSearchHuman(w io.Writer, response radarclient.GeoSearchResponse) error {
+	fmt.Fprintf(w, "totals: supported %d | possible %d | excluded %d | page %d (page size %d)\n",
+		response.Totals.Supported, response.Totals.Possible, response.Totals.Excluded, response.Page, response.PageSize)
+
+	inventory := "unknown"
+	if response.Coverage.InventoryComplete != nil {
+		inventory = strconv.FormatBool(*response.Coverage.InventoryComplete)
+	}
+	states := response.Coverage.LocationStates
+	fmt.Fprintf(w, "observed: %s | inventory complete: %s | unresolved floors: %d\n",
+		radarText(response.ObservedAt), inventory, response.Coverage.UnresolvedFloorCount)
+	fmt.Fprintf(w, "location states: pending %d | in_progress %d | retry_due %d | complete %d | blocked %d | unlocated %d\n",
+		states.Pending, states.InProgress, states.RetryDue, states.Complete, states.Blocked, states.Unlocated)
+
+	groups := []struct {
+		name    string
+		rows    []radarclient.GeoListingRow
+		hasMore bool
+	}{
+		{radarclient.GroupSupported, response.Groups.Supported, response.HasMore.Supported},
+		{radarclient.GroupPossible, response.Groups.Possible, response.HasMore.Possible},
+		{radarclient.GroupExcluded, response.Groups.Excluded, response.HasMore.Excluded},
+	}
+	for _, group := range groups {
+		if len(group.rows) == 0 {
+			fmt.Fprintf(w, "%s: no rows on this page (hasMore=%t)\n", group.name, group.hasMore)
+			continue
+		}
+		fmt.Fprintf(w, "%s:\n", group.name)
+		table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(table, "PRICE\tAREA\tFLOOR\tMETHOD/PRECISION\tWARNINGS\tURL")
+		limit := len(group.rows)
+		if limit > radarHumanRowsPerGroup {
+			limit = radarHumanRowsPerGroup
+		}
+		for _, row := range group.rows[:limit] {
+			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%d\t%s\n",
+				radarPrice(row.PriceEur), radarArea(row.AreaSqm), radarTextPointer(row.Floor),
+				radarLocationTag(row.Location), len(row.Location.Warnings), row.URL)
+		}
+		if err := table.Flush(); err != nil {
+			return err
+		}
+		if omitted := len(group.rows) - limit; omitted > 0 {
+			fmt.Fprintf(w, "  (%d more %s rows on this page; hasMore=%t)\n", omitted, group.name, group.hasMore)
+		} else if group.hasMore {
+			fmt.Fprintf(w, "  (hasMore=true: more %s rows exist on later pages)\n", group.name)
+		}
+	}
+	return nil
+}
+
+// printRadarAllHuman prints the combined --all rows once and states the page
+// count and any truncation.
+func printRadarAllHuman(w io.Writer, output radarAllOutput) error {
+	if output.PagesFetched == 0 {
+		fmt.Fprintln(w, "radar: no page completed")
+		return nil
+	}
+	combined := output.Envelopes[len(output.Envelopes)-1]
+	combined.Groups = radarclient.GeoGroups{}
+	for _, envelope := range output.Envelopes {
+		combined.Groups.Supported = append(combined.Groups.Supported, envelope.Groups.Supported...)
+		combined.Groups.Possible = append(combined.Groups.Possible, envelope.Groups.Possible...)
+		combined.Groups.Excluded = append(combined.Groups.Excluded, envelope.Groups.Excluded...)
+	}
+	if err := printRadarSearchHuman(w, combined); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "pages fetched: %d", output.PagesFetched)
+	if output.Truncated {
+		fmt.Fprintf(w, " | TRUNCATED (%s): every requested page was not read", output.TruncationReason)
+	}
+	fmt.Fprintln(w)
+	return nil
+}
+
+// newRadarLocationCmd registers the single-listing evidence lookup.
+func newRadarLocationCmd() *cobra.Command {
+	var jsonOut bool
+
+	cmd := &cobra.Command{
+		Use:   "location <id>",
+		Short: "Print one listing's full Radar location evidence",
+		Long: "Fetches one listing's full location evidence from the Radar locations/batch operation: " +
+			"the method that produced the display point, its precision, whether it is source-asserted " +
+			"or derived, the source pin, the support geometry kind, every quoted property clue, the " +
+			"recorded alternatives and the warning codes.\n\n" +
+			"A listing the Radar store does not know exits non-zero with a typed not_found error: an " +
+			"unknown advert is not an unlocated one. --json prints the evidence document unchanged.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := strings.TrimSpace(args[0])
+			if id == "" {
+				return fmt.Errorf("a listing id is required")
+			}
+			client, err := radarclient.FromEnv()
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), radarCommandTimeout)
+			defer cancel()
+
+			detail, err := client.GeoLocation(ctx, id)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				return writeRadarLocationJSON(os.Stdout, detail)
+			}
+			return printRadarLocationHuman(os.Stdout, detail)
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print the full location evidence as JSON")
+	return cmd
+}
+
+// printRadarLocationHuman prints the evidence a person reads: identity,
+// method/precision/verification, the display and source points, the support
+// kind, the quoted clues, alternatives and warnings.
+func printRadarLocationHuman(w io.Writer, detail radarclient.GeoLocationDetail) error {
+	fmt.Fprintf(w, "listing: %s | adv: %s\n", radarText(detail.ListingID), radarText(detail.AdvID))
+	fmt.Fprintf(w, "method: %s | precision: %s | verification: %s | outcome: %s | state: %s\n",
+		radarTextPointer(detail.Method), radarTextPointer(detail.Precision), radarTextPointer(detail.Verification),
+		radarTextPointer(detail.Outcome), radarTextPointer(detail.State))
+	fmt.Fprintf(w, "display point: %s\n", radarPoint(detail.DisplayPoint))
+	fmt.Fprintf(w, "source pin: %s\n", radarSourcePin(detail))
+	fmt.Fprintf(w, "support: %s\n", radarSupport(detail.Support, detail.SupportKind))
+
+	if len(detail.Evidence) == 0 {
+		fmt.Fprintln(w, "evidence: none")
+	} else {
+		fmt.Fprintln(w, "evidence:")
+		for _, evidence := range detail.Evidence {
+			ambiguous := ""
+			if evidence.Ambiguous != nil && *evidence.Ambiguous {
+				ambiguous = " (ambiguous)"
+			}
+			fmt.Fprintf(w, "  - [%s] %q relation=%s%s feature_ids=%d\n",
+				radarText(evidence.SourceField), evidence.Quote, radarText(evidence.Relation), ambiguous, len(evidence.FeatureIDs))
+		}
+	}
+
+	if len(detail.Alternatives) == 0 {
+		fmt.Fprintln(w, "alternatives: none")
+	} else {
+		fmt.Fprintf(w, "alternatives (%d):\n", len(detail.Alternatives))
+		for _, alternative := range detail.Alternatives {
+			fmt.Fprintf(w, "  - precision=%s support=%s point=%s evidence=%d\n",
+				radarText(alternative.Precision), radarText(alternative.SupportKind),
+				radarPoint(alternative.DisplayPoint), len(alternative.Evidence))
+		}
+	}
+
+	fmt.Fprintf(w, "warnings: %s\n", radarWarnings(detail.Warnings))
+	fmt.Fprintf(w, "processed at: %s\n", radarTextPointer(detail.ProcessedAt))
+	return nil
+}
+
+func radarPoint(point *radarclient.GeoPoint) string {
+	if point == nil {
+		return "none"
+	}
+	return fmt.Sprintf("%.6f, %.6f", point.Lat, point.Lng)
+}
+
+func radarSourcePin(detail radarclient.GeoLocationDetail) string {
+	if detail.SourcePin == nil {
+		return "none"
+	}
+	pin := radarPoint(detail.SourcePin)
+	if detail.SourcePinObservedAt != nil && *detail.SourcePinObservedAt != "" {
+		pin += " (observed " + *detail.SourcePinObservedAt + ")"
+	}
+	return pin
+}
+
+func radarSupport(geometry *radarclient.GeoJSONGeometry, kind *string) string {
+	supportKind := "unknown"
+	if kind != nil && strings.TrimSpace(*kind) != "" {
+		supportKind = *kind
+	}
+	if geometry == nil {
+		return supportKind + " (no geometry)"
+	}
+	return supportKind + " (" + radarText(geometry.Type) + ")"
+}
+
+func radarWarnings(warnings []string) string {
+	if len(warnings) == 0 {
+		return "none"
+	}
+	return strings.Join(warnings, ", ")
+}
+
+func radarText(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "—"
+	}
+	return value
+}
+
+func radarTextPointer(value *string) string {
+	if value == nil {
+		return "—"
+	}
+	return radarText(*value)
+}
+
+func radarPrice(value *float64) string {
+	if value == nil {
+		return "—"
+	}
+	return fmt.Sprintf("€%.0f", *value)
+}
+
+func radarArea(value *float64) string {
+	if value == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.0f m²", *value)
+}
+
+func radarLocationTag(location radarclient.GeoListingLocation) string {
+	method, precision := "—", "—"
+	if location.Method != nil {
+		method = *location.Method
+	}
+	if location.Precision != nil {
+		precision = *location.Precision
+	}
+	return method + "/" + precision
 }

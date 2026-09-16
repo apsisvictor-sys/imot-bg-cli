@@ -733,3 +733,139 @@ func TestDetailNotificationPlaceholderIsNotPhotoAbsence(t *testing.T) {
 	}
 	requireDetailEvidence(t, detail, DetailKeyPhotoURLs, DetailPresenceUnknown, DetailReasonNoSelectorHit)
 }
+
+// --- Card scan: advert identity, not the shared class marker --------------
+
+// Result pages render news teasers inside the same class="zaglavie" block
+// marker advert cards use. The teaser carries no advert link, so it must not be
+// read as a card: doing so invented a phantom advert whose headline's first
+// letter looked like an unrecognized property type and made every sweep report
+// an incomplete run.
+func TestScanListingsSkipsNonCardBlocks(t *testing.T) {
+	html := readFixture(t, "search-page-news-teaser.html")
+	scan := ScanListings(html)
+	if len(scan.Listings) != 1 {
+		t.Fatalf("listings = %d, want the one advert card: %#v", len(scan.Listings), scan.Listings)
+	}
+	if got := scan.Listings[0].Type; got != "2-СТАЕН" {
+		t.Errorf("type = %q, want 2-СТАЕН", got)
+	}
+	if scan.CardBlocks != 1 {
+		t.Errorf("card_blocks = %d, want 1 advert card", scan.CardBlocks)
+	}
+	if scan.SkippedNonCardBlocks != 1 {
+		t.Errorf("skipped_non_card_blocks = %d, want the one news teaser", scan.SkippedNonCardBlocks)
+	}
+	if scan.UnknownTypeCards != 0 || len(scan.UnknownTypeSamples) != 0 {
+		t.Errorf("unknown type evidence = %d %#v, want none: a skipped non-card is not a card", scan.UnknownTypeCards, scan.UnknownTypeSamples)
+	}
+	if scan.DroppedCards != 0 {
+		t.Errorf("dropped_cards = %d, want 0: a skipped non-card is not a dropped card", scan.DroppedCards)
+	}
+
+	// The search envelope absorbs the same evidence.
+	result := ParseSearchPage(html, "search-page-news-teaser.html")
+	if result.CardBlocks != 1 || result.SkippedNonCardBlocks != 1 || result.UnknownTypeCards != 0 || result.DroppedCards != 0 {
+		t.Errorf("envelope card integrity = blocks %d skipped %d unknown %d dropped %d, want 1/1/0/0",
+			result.CardBlocks, result.SkippedNonCardBlocks, result.UnknownTypeCards, result.DroppedCards)
+	}
+	if len(result.UnknownTypeSamples) != 0 {
+		t.Errorf("envelope unknown_type_samples = %#v, want none", result.UnknownTypeSamples)
+	}
+}
+
+// A card must still be accepted when it proves identity with its advert number
+// instead of an href, so the structural check never drops a genuine advert.
+func TestScanListingsAcceptsCardWithAdvertNumberOnly(t *testing.T) {
+	html := `<div class="SearchInfoLine">показани 1-1 от общо 1 обяви</div>` +
+		`<div class="listItem"><div class="zaglavie">` +
+		`<a href="/obiava-1b177425523801314-dvustaen" class="title">Продава 2-СТАЕНград София, Лозенец</a>` +
+		`<location>град София, Лозенец</location>` +
+		`<div class="info">65 кв.м, 3-ти ет. от 5, тел.: 0888 123 456</div>` +
+		`</div><div class="price">120 000 €</div></div>`
+
+	scan := ScanListings(html)
+	if len(scan.Listings) != 1 || scan.CardBlocks != 1 || scan.SkippedNonCardBlocks != 0 {
+		t.Errorf("scan = %d listings, %d blocks, %d skipped; want 1/1/0", len(scan.Listings), scan.CardBlocks, scan.SkippedNonCardBlocks)
+	}
+}
+
+// --- Property-type vocabulary --------------------------------------------
+
+// The source advertises its property types on the search form; every advertised
+// label must resolve when a card title uses it, otherwise a genuine advert of
+// that type is reported as unrecognized and blocks absence detection.
+func TestExtractTypeEvidenceCoversTaxonomyVocabulary(t *testing.T) {
+	for label := range taxonomyLabelSlugs {
+		title := "Продава " + label + " град София, Лозенец"
+		got, recognized := extractTypeEvidence(title)
+		if !recognized {
+			t.Errorf("extractTypeEvidence(%q) did not recognize taxonomy label %q", title, label)
+			continue
+		}
+		if got == "" {
+			t.Errorf("extractTypeEvidence(%q) returned an empty canonical type for %q", title, label)
+		}
+	}
+}
+
+// Two genuine types the source advertises were missing from the keyword table,
+// so every card of those types counted as an unrecognized type.
+func TestExtractTypeEvidenceRecognizesHotelAndIndustrialPremises(t *testing.T) {
+	for _, tc := range []struct{ title, want string }{
+		{"Продава ХОТЕЛград София, Оборище", "ХОТЕЛ"},
+		{"Продава ПРОМ. ПОМЕЩЕНИЕ град София, Кремиковци", "ПРОМИШЛЕНО"},
+		{"Продава ПРОМИШЛЕНО град София, Кремиковци", "ПРОМИШЛЕНО"},
+	} {
+		got, recognized := extractTypeEvidence(tc.title)
+		if !recognized || got != tc.want {
+			t.Errorf("extractTypeEvidence(%q) = %q/%v, want %q/true", tc.title, got, recognized, tc.want)
+		}
+	}
+
+	// The emitted rows carry the canonical types, not the raw spellings.
+	result := ParseSearchPage(readFixture(t, "search-page-types.html"), "search-page-types.html")
+	if len(result.Listings) != 3 {
+		t.Fatalf("listings = %d, want 3", len(result.Listings))
+	}
+	for i, want := range []string{"ХОТЕЛ", "ПРОМИШЛЕНО", "2-СТАЕН"} {
+		if got := result.Listings[i].Type; got != want {
+			t.Errorf("listing %d type = %q, want %q", i, got, want)
+		}
+	}
+	if result.UnknownTypeCards != 0 || len(result.UnknownTypeSamples) != 0 || result.DroppedCards != 0 {
+		t.Errorf("card integrity = unknown %d %#v dropped %d, want 0/none/0",
+			result.UnknownTypeCards, result.UnknownTypeSamples, result.DroppedCards)
+	}
+}
+
+// The canonical type must not depend on how the advertiser capitalised the
+// title. The replaced cut-at-first-lowercase heuristic turned "Продава
+// Двустаен" into the one-letter type "Д".
+func TestExtractTypeEvidenceCanonicalIgnoresCapitalisation(t *testing.T) {
+	for _, tc := range []struct{ title, want string }{
+		{"Продава Двустаен град София, Лозенец", "2-СТАЕН"},
+		{"Продава ДВУСТАЕНград София, Лозенец", "2-СТАЕН"},
+		{"Продава 2-СТАЕН град София, Лозенец", "2-СТАЕН"},
+		{"Продава Хотел град София, Оборище", "ХОТЕЛ"},
+		{"Продава Мезонетград София", "МЕЗОНЕТ"},
+		{"Продава Пром. помещение град София, Кремиковци", "ПРОМИШЛЕНО"},
+	} {
+		got, recognized := extractTypeEvidence(tc.title)
+		if !recognized || got != tc.want {
+			t.Errorf("extractTypeEvidence(%q) = %q/%v, want %q/true", tc.title, got, recognized, tc.want)
+		}
+	}
+}
+
+// An unrecognized title keeps a usable raw sample instead of the one-letter
+// fragment the cut-at-first-lowercase heuristic produced.
+func TestExtractTypeEvidenceRawFallbackIsNotATruncatedLetter(t *testing.T) {
+	got, recognized := extractTypeEvidence("Продава Барбекю град София, Лозенец")
+	if recognized {
+		t.Fatalf("type = %q, want unrecognized for a type outside the source vocabulary", got)
+	}
+	if got != "Барбекю" {
+		t.Errorf("raw type = %q, want the title's type text, not a single letter", got)
+	}
+}
