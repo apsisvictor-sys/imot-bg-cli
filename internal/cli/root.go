@@ -29,6 +29,8 @@ var (
 	flagMaxPrice     int
 	flagMinSqM       int
 	flagMaxSqM       int
+	flagFloorFrom    int
+	flagFloorTo      int
 	flagNeighborhood string
 	flagPages        int
 	flagJSON         bool
@@ -47,6 +49,8 @@ func addSearchFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&flagMaxPrice, "max-price", 0, "Maximum price in EUR")
 	cmd.Flags().IntVar(&flagMinSqM, "min-sqm", 0, "Minimum size in sq.m")
 	cmd.Flags().IntVar(&flagMaxSqM, "max-sqm", 0, "Maximum size in sq.m")
+	cmd.Flags().IntVar(&flagFloorFrom, "floor-from", -1, "Source-side minimum floor (-1=unset; 0=ground floor)")
+	cmd.Flags().IntVar(&flagFloorTo, "floor-to", -1, "Source-side maximum floor (-1=unset; 0=ground floor)")
 	cmd.Flags().StringVar(&flagNeighborhood, "neighborhood", "", "Neighborhood (partial match)")
 	cmd.Flags().IntVar(&flagPages, "pages", 0, "Number of pages to fetch (0=all pages, auto-detect from total count)")
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "JSON output on stdout")
@@ -352,11 +356,14 @@ func resolveCity(city string) string {
 // database access. Cobra's integer flags already refuse fractions, trailing
 // characters and unsafe integers at parse time; negatives and reversed ranges
 // were still accepted and could silently produce empty or surprising results.
-// Zero keeps its existing meaning: no bound for price/size, auto-detect for
-// --pages.
-func validateBounds(minPrice, maxPrice, minSqM, maxSqM, pages int) error {
+// Zero keeps its existing meaning: no bound for price/size; floor uses -1 for
+// unset so ground floor (0) remains representable.
+func validateBounds(minPrice, maxPrice, minSqM, maxSqM, floorFrom, floorTo, pages int) error {
 	if minPrice < 0 || maxPrice < 0 || minSqM < 0 || maxSqM < 0 {
 		return fmt.Errorf("price and size bounds must not be negative")
+	}
+	if floorFrom < -1 || floorTo < -1 {
+		return fmt.Errorf("floor bounds must be -1 (unset) or non-negative")
 	}
 	if pages < 0 {
 		return fmt.Errorf("--pages must not be negative; 0 means all pages")
@@ -367,11 +374,22 @@ func validateBounds(minPrice, maxPrice, minSqM, maxSqM, pages int) error {
 	if maxSqM > 0 && minSqM > maxSqM {
 		return fmt.Errorf("--min-sqm %d exceeds --max-sqm %d", minSqM, maxSqM)
 	}
+	if floorFrom >= 0 && floorTo >= 0 && floorFrom > floorTo {
+		return fmt.Errorf("--floor-from %d exceeds --floor-to %d", floorFrom, floorTo)
+	}
 	return nil
 }
 
+func optionalFloor(value int) *int {
+	if value < 0 {
+		return nil
+	}
+	copy := value
+	return &copy
+}
+
 func runSearch(cmd *cobra.Command, args []string) error {
-	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagFloorFrom, flagFloorTo, flagPages); err != nil {
 		return err
 	}
 	if flagFull && flagQuiet {
@@ -398,6 +416,8 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		MaxPrice:     flagMaxPrice,
 		MinSqM:       flagMinSqM,
 		MaxSqM:       flagMaxSqM,
+		FloorFrom:    optionalFloor(flagFloorFrom),
+		FloorTo:      optionalFloor(flagFloorTo),
 		Neighborhood: flagNeighborhood,
 		Pages:        flagPages,
 		Rent:         flagRent,
@@ -500,6 +520,9 @@ func runSearchFromFile(filePath string) error {
 	if flagPages != 0 {
 		return fmt.Errorf("--pages has no meaning with --file; a saved page is parsed as-is")
 	}
+	if flagFloorFrom >= 0 || flagFloorTo >= 0 {
+		return fmt.Errorf("floor bounds require a live source search; they cannot be applied to --file")
+	}
 
 	raw, err := readLocalPage(filePath)
 	if err != nil {
@@ -581,7 +604,7 @@ func readLocalPage(filePath string) ([]byte, error) {
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
-	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagFloorFrom, flagFloorTo, flagPages); err != nil {
 		return err
 	}
 	if flagCity == "" {
@@ -596,6 +619,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 		MaxPrice:     flagMaxPrice,
 		MinSqM:       flagMinSqM,
 		MaxSqM:       flagMaxSqM,
+		FloorFrom:    optionalFloor(flagFloorFrom),
+		FloorTo:      optionalFloor(flagFloorTo),
 		Neighborhood: flagNeighborhood,
 		Pages:        flagPages,
 		Rent:         flagRent,
@@ -630,8 +655,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 }
 
 func runLocal(cmd *cobra.Command, args []string) error {
-	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagFloorFrom, flagFloorTo, flagPages); err != nil {
 		return err
+	}
+	if flagFloorFrom >= 0 || flagFloorTo >= 0 {
+		return fmt.Errorf("floor bounds are only supported for live searches")
 	}
 	if flagCity == "" {
 		flagCity = ""
@@ -654,8 +682,11 @@ func runLocal(cmd *cobra.Command, args []string) error {
 }
 
 func runStats(cmd *cobra.Command, args []string) error {
-	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagFloorFrom, flagFloorTo, flagPages); err != nil {
 		return err
+	}
+	if flagFloorFrom >= 0 || flagFloorTo >= 0 {
+		return fmt.Errorf("floor bounds are only supported for live searches")
 	}
 	if flagCity == "" {
 		flagCity = ""
@@ -767,7 +798,7 @@ func runSQL(cmd *cobra.Command, args []string) error {
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {
-	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagPages); err != nil {
+	if err := validateBounds(flagMinPrice, flagMaxPrice, flagMinSqM, flagMaxSqM, flagFloorFrom, flagFloorTo, flagPages); err != nil {
 		return err
 	}
 	if flagCity == "" {
@@ -787,6 +818,8 @@ func runWatch(cmd *cobra.Command, args []string) error {
 		MaxPrice:     flagMaxPrice,
 		MinSqM:       flagMinSqM,
 		MaxSqM:       flagMaxSqM,
+		FloorFrom:    optionalFloor(flagFloorFrom),
+		FloorTo:      optionalFloor(flagFloorTo),
 		Neighborhood: flagNeighborhood,
 		Pages:        flagPages,
 		Rent:         flagRent,

@@ -533,6 +533,15 @@ type SearchParams struct {
 	Neighborhood string
 	Pages        int
 	Rent         bool
+
+	// FloorFrom and FloorTo are optional source-side floor bounds, sent to
+	// imot.bg as the floor_from and floor_to query parameters of the result
+	// URL. A nil pointer means the bound was not requested and no parameter is
+	// emitted. A pointer to 0 is the ground floor: the source distinguishes "no
+	// floor bound" from "the ground floor", and a plain int zero cannot carry
+	// both meanings.
+	FloorFrom *int
+	FloorTo   *int
 }
 
 // FormatTimestamp returns a standard timestamp string

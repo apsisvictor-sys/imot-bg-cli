@@ -427,6 +427,20 @@ func buildURLWithSlug(params SearchParams, neighborhoodSlug string, page int) st
 		u += "/"
 	}
 
+	// These query parameters are the URLs produced by the source's own search
+	// form (f31/f32). They are source-side filters, unlike the legacy price/size
+	// flags which remain client-side row filters.
+	floorQuery := url.Values{}
+	if params.FloorFrom != nil {
+		floorQuery.Set("floor_from", strconv.Itoa(*params.FloorFrom))
+	}
+	if params.FloorTo != nil {
+		floorQuery.Set("floor_to", strconv.Itoa(*params.FloorTo))
+	}
+	if encoded := floorQuery.Encode(); encoded != "" {
+		u += "?" + encoded
+	}
+
 	return u
 }
 
@@ -512,27 +526,19 @@ func (c *Client) Search(params SearchParams) ([]Listing, error) {
 // imot.bg request URL (server_filters) and which it applies only to rows it has
 // already downloaded (client_filters).
 //
-// The URL built by buildURLWithSlug carries only category, city, neighborhood
-// and type. No price or size parameter is part of that request (the site's
-// filtered-search form is not implemented here and its URL parameters have not
-// been verified), so min_price, max_price, min_sqm and max_sqm can only narrow
-// the downloaded rows. A caller that needs a price or size band to bound the
-// source must decompose the query itself, because total_count still counts
-// listings outside the band.
+// The URL built by buildURLWithSlug carries category, city, neighborhood, type
+// and the verified source-side floor bounds. Price and size remain client-side:
+// their CLI flags narrow downloaded rows but do not narrow the source total.
+// A caller must never use those client filters to claim cap decomposition.
 // ServerFilterSupport names every filter this CLI can apply at the SOURCE,
 // regardless of what one query actually used.
 //
 // This is deliberately a separate answer from SearchFilters. SearchFilters reports
 // what a particular request narrowed, so an unfiltered query truthfully omits
-// "type". A client that needs to decide which dimensions it may decompose along —
-// splitting a neighbourhood too large for one page into per-type queries — needs
-// the capability instead, and reading the per-query answer there makes it give up
-// on decomposition entirely.
-//
-// Price and size are absent on purpose: the request URL carries no such parameter,
-// so they can only ever narrow rows that were already downloaded.
+// "type" and "floor". A client deciding which dimensions it may decompose along
+// needs the capability instead.
 func ServerFilterSupport() []string {
-	return []string{"city", "neighborhood", "type"}
+	return []string{"city", "neighborhood", "type", "floor"}
 }
 
 func SearchFilters(params SearchParams, neighborhoodSlug string) (server, client []string) {
@@ -546,6 +552,9 @@ func SearchFilters(params SearchParams, neighborhoodSlug string) (server, client
 	}
 	if params.Type != "" && resolveTypeSlug(params.Type) != "" {
 		server = append(server, "type")
+	}
+	if params.FloorFrom != nil || params.FloorTo != nil {
+		server = append(server, "floor")
 	}
 	if params.MinPrice > 0 {
 		client = append(client, "min_price")
